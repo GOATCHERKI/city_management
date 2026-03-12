@@ -14,10 +14,20 @@ const buildVerificationLink = (token) => {
   return `${baseUrl}/api/auth/verify-email?token=${token}`;
 };
 
+const getRequestBody = (req) => {
+  if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
+
+  return {};
+};
+
 export const registerUser = async (req, res) => {
-  const { cid, fullName, email, password } = req.body;
+  const { cid, fullName, email, password } = getRequestBody(req);
   if (!cid || !fullName || !email || !password)
-    return res.status(400).json({ message: "Missing fields" });
+    return res.status(400).json({
+      message: "cid, fullName, email, and password are required.",
+    });
 
   const normalizedCid = String(cid).trim().toLowerCase();
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -55,7 +65,11 @@ export const registerUser = async (req, res) => {
 };
 
 export const loginUser = async (req, res) => {
-  const { cid, password } = req.body;
+  const { cid, password } = getRequestBody(req);
+  if (!cid || !password) {
+    return res.status(400).json({ message: "cid and password are required." });
+  }
+
   const normalizedCid = String(cid || "").trim().toLowerCase();
   const user = users.find((u) => u.cid === normalizedCid);
   if (!user) return res.status(400).json({ message: "Invalid credentials" });
@@ -75,7 +89,8 @@ export const loginUser = async (req, res) => {
 };
 
 export const verifyEmail = (req, res) => {
-  const token = String(req.query.token || req.body.token || "").trim();
+  const body = getRequestBody(req);
+  const token = String(req.query.token || body.token || "").trim();
   if (!token) {
     return res.status(400).json({ message: "Verification token is required" });
   }
