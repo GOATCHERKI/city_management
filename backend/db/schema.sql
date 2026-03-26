@@ -94,6 +94,32 @@ NOT NULL DEFAULT NOW
 ()
 );
 
+CREATE TABLE
+IF NOT EXISTS admin_audit_logs
+(
+  id BIGSERIAL PRIMARY KEY,
+  actor_user_id BIGINT REFERENCES users
+(id) ON
+DELETE
+SET NULL
+,
+  actor_cid VARCHAR
+(50),
+  target_user_id BIGINT REFERENCES users
+(id) ON
+DELETE
+SET NULL
+,
+  action VARCHAR
+(60) NOT NULL,
+  old_values JSONB,
+  new_values JSONB,
+  ip_address INET,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW
+()
+);
+
 CREATE INDEX
 IF NOT EXISTS idx_users_role ON users
 (role);
@@ -116,12 +142,21 @@ IF NOT EXISTS idx_issues_created_at ON issues
 CREATE INDEX
 IF NOT EXISTS idx_issue_updates_issue_id ON issue_updates
 (issue_id);
+CREATE INDEX
+IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs
+(created_at DESC);
+CREATE INDEX
+IF NOT EXISTS idx_admin_audit_logs_actor_user_id ON admin_audit_logs
+(actor_user_id);
+CREATE INDEX
+IF NOT EXISTS idx_admin_audit_logs_target_user_id ON admin_audit_logs
+(target_user_id);
 
 INSERT INTO departments
-    (name, description)
+  (name, description)
 VALUES
-    ('Public Works', 'Roads, potholes, and general infrastructure'),
-    ('Sanitation', 'Garbage collection and waste management'),
-    ('Water Services', 'Leaks, pipelines, and drainage')
+  ('Public Works', 'Roads, potholes, and general infrastructure'),
+  ('Sanitation', 'Garbage collection and waste management'),
+  ('Water Services', 'Leaks, pipelines, and drainage')
 ON CONFLICT
 (name) DO NOTHING;

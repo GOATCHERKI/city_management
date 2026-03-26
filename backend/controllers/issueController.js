@@ -67,9 +67,17 @@ export const uploadIssueImage = async (req, res) => {
     return res.status(400).json({ message: "Image file is required." });
   }
 
+  if (!req.file.buffer || !req.file.buffer.length) {
+    return res.status(400).json({ message: "Uploaded file is empty." });
+  }
+
   try {
-    const result = await imagekit.upload({
-      file: req.file.buffer,
+    const imageFile = new File([req.file.buffer], req.file.originalname || "issue-image", {
+      type: req.file.mimetype || "application/octet-stream",
+    });
+
+    const result = await imagekit.files.upload({
+      file: imageFile,
       fileName: `issue-${Date.now()}-${req.file.originalname}`,
       folder: "/smart-city/issues",
       useUniqueFileName: true,

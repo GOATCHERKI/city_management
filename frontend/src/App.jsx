@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import MapPicker from "./components/MapPicker.jsx";
-import { apiRequest } from "./api.js";
+import { API_BASE_URL, apiRequest } from "./api.js";
 
 const TOKEN_KEY = "city_mgmt_token";
 const USER_KEY = "city_mgmt_user";
@@ -421,6 +421,17 @@ function MyReports({ token, refreshKey }) {
             <span>{new Date(item.created_at).toLocaleString()}</span>
           </div>
           {item.photo_url ? (
+            <img
+              src={item.photo_url}
+              alt={`Issue ${item.id}`}
+              className="issue-photo"
+              loading="lazy"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
+            />
+          ) : null}
+          {item.photo_url ? (
             <a href={item.photo_url} target="_blank" rel="noreferrer" className="photo-link">
               View Photo
             </a>
@@ -451,9 +462,27 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
         >
           Assign Department
         </button>
+        <button
+          className={activeTab === "admin-users" ? "active" : ""}
+          onClick={() => onTabChange("admin-users")}
+          type="button"
+        >
+          User Management
+        </button>
+        <button
+          className={activeTab === "admin-audit" ? "active" : ""}
+          onClick={() => onTabChange("admin-audit")}
+          type="button"
+        >
+          Audit Logs
+        </button>
       </div>
 
-      {activeTab === "admin-assign" ? (
+      {activeTab === "admin-users" ? (
+        <AdminUserManagement token={token} />
+      ) : activeTab === "admin-audit" ? (
+        <AdminAuditLogs token={token} />
+      ) : activeTab === "admin-assign" ? (
         <AssignIssueForm
           token={token}
           onAssigned={() => {
@@ -557,6 +586,22 @@ function AllIssues({ token, refreshKey }) {
             <span>Created by: {item.created_by_name || item.created_by}</span>
             <span>Department: {item.assigned_department_name || "Unassigned"}</span>
           </div>
+          {item.photo_url ? (
+            <img
+              src={item.photo_url}
+              alt={`Issue ${item.id}`}
+              className="issue-photo"
+              loading="lazy"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
+            />
+          ) : null}
+          {item.photo_url ? (
+            <a href={item.photo_url} target="_blank" rel="noreferrer" className="photo-link">
+              View Photo
+            </a>
+          ) : null}
         </article>
       ))}
     </div>
@@ -716,6 +761,590 @@ function UpdateStatusForm({ token, onUpdated }) {
 
       {feedback ? <p className="feedback">{feedback}</p> : null}
     </form>
+  );
+}
+
+function AdminUserManagement({ token }) {
+  const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+
+  const [newUser, setNewUser] = useState({
+    cid: "",
+    fullName: "",
+    email: "",
+    password: "",
+    role: "staff",
+    departmentId: "",
+  });
+
+  const [roleUpdate, setRoleUpdate] = useState({ userId: "", role: "staff", departmentId: "" });
+  const [deptUpdate, setDeptUpdate] = useState({ userId: "", departmentId: "" });
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setFeedback("");
+    try {
+      const [userResult, departmentResult] = await Promise.all([
+        apiRequest({ path: "/admin/users", token }),
+        apiRequest({ path: "/issues/departments", token }),
+      ]);
+      setUsers(userResult.users || []);
+      setDepartments(departmentResult.departments || []);
+    } catch (error) {
+      setFeedback(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const createUser = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: "/admin/users",
+        method: "POST",
+        token,
+        body: {
+          cid: newUser.cid,
+          fullName: newUser.fullName,
+          email: newUser.email,
+          password: newUser.password,
+          role: newUser.role,
+          departmentId: newUser.role === "staff" ? Number(newUser.departmentId) : null,
+        },
+      });
+      setFeedback("User created successfully.");
+      setNewUser({
+        cid: "",
+        fullName: "",
+        email: "",
+        password: "",
+        role: "staff",
+        departmentId: "",
+      });
+      await loadData();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  };
+
+  const submitRoleUpdate = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: `/admin/users/${roleUpdate.userId}/role`,
+        method: "PATCH",
+        token,
+        body: {
+          role: roleUpdate.role,
+          departmentId: roleUpdate.role === "staff" ? Number(roleUpdate.departmentId) : null,
+        },
+      });
+      setFeedback("User role updated.");
+      await loadData();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  };
+
+  const submitDepartmentUpdate = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: `/admin/users/${deptUpdate.userId}/department`,
+        method: "PATCH",
+        token,
+        body: {
+          departmentId: deptUpdate.departmentId ? Number(deptUpdate.departmentId) : null,
+        },
+      });
+      setFeedback("Staff department updated.");
+      await loadData();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  };
+
+  return (
+    <section className="admin-grid">
+      <form className="form-grid card-box" onSubmit={createUser}>
+        <h3 className="full-width">Create User</h3>
+        <label>
+          CID
+          <input
+            value={newUser.cid}
+            onChange={(e) => setNewUser((prev) => ({ ...prev, cid: e.target.value }))}
+            required
+          />
+        </label>
+        <label>
+          Full Name
+          <input
+            value={newUser.fullName}
+            onChange={(e) => setNewUser((prev) => ({ ...prev, fullName: e.target.value }))}
+            required
+          />
+        </label>
+        <label>
+          Email
+          <input
+            type="email"
+            value={newUser.email}
+            onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
+            required
+          />
+        </label>
+        <label>
+          Temp Password
+          <input
+            type="password"
+            value={newUser.password}
+            onChange={(e) => setNewUser((prev) => ({ ...prev, password: e.target.value }))}
+            required
+          />
+        </label>
+        <label>
+          Role
+          <select
+            value={newUser.role}
+            onChange={(e) => setNewUser((prev) => ({ ...prev, role: e.target.value }))}
+          >
+            <option value="citizen">Citizen</option>
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <label>
+          Department (for staff)
+          <select
+            value={newUser.departmentId}
+            onChange={(e) => setNewUser((prev) => ({ ...prev, departmentId: e.target.value }))}
+          >
+            <option value="">Select department</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="solid-btn">Create User</button>
+      </form>
+
+      <form className="form-grid card-box" onSubmit={submitRoleUpdate}>
+        <h3 className="full-width">Change User Role</h3>
+        <label>
+          User
+          <select
+            value={roleUpdate.userId}
+            onChange={(e) => setRoleUpdate((prev) => ({ ...prev, userId: e.target.value }))}
+            required
+          >
+            <option value="">Select user</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                #{user.id} {user.cid} ({user.role})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          New Role
+          <select
+            value={roleUpdate.role}
+            onChange={(e) => setRoleUpdate((prev) => ({ ...prev, role: e.target.value }))}
+          >
+            <option value="citizen">Citizen</option>
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <label>
+          Department (staff)
+          <select
+            value={roleUpdate.departmentId}
+            onChange={(e) => setRoleUpdate((prev) => ({ ...prev, departmentId: e.target.value }))}
+          >
+            <option value="">Select department</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="solid-btn">Update Role</button>
+      </form>
+
+      <form className="form-grid card-box" onSubmit={submitDepartmentUpdate}>
+        <h3 className="full-width">Assign Staff Department</h3>
+        <label>
+          Staff User
+          <select
+            value={deptUpdate.userId}
+            onChange={(e) => setDeptUpdate((prev) => ({ ...prev, userId: e.target.value }))}
+            required
+          >
+            <option value="">Select staff user</option>
+            {users
+              .filter((user) => user.role === "staff")
+              .map((user) => (
+                <option key={user.id} value={user.id}>
+                  #{user.id} {user.cid}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          Department
+          <select
+            value={deptUpdate.departmentId}
+            onChange={(e) => setDeptUpdate((prev) => ({ ...prev, departmentId: e.target.value }))}
+            required
+          >
+            <option value="">Select department</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="solid-btn">Update Department</button>
+      </form>
+
+      <section className="card-box full-width">
+        <h3>Users</h3>
+        {loading ? <p className="info-box">Loading users...</p> : null}
+        {!loading ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>CID</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Department</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id}>
+                    <td>{user.id}</td>
+                    <td>{user.cid}</td>
+                    <td>{user.full_name}</td>
+                    <td>{user.role}</td>
+                    <td>{user.department_name || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
+
+      {feedback ? <p className="feedback full-width">{feedback}</p> : null}
+    </section>
+  );
+}
+
+function AdminAuditLogs({ token }) {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+
+  const [action, setAction] = useState("");
+  const [actorCid, setActorCid] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [limit, setLimit] = useState(25);
+  const [offset, setOffset] = useState(0);
+
+  const buildAuditParams = useCallback(
+    ({
+      nextAction = action,
+      nextActorCid = actorCid,
+      nextFrom = from,
+      nextTo = to,
+      nextLimit = limit,
+      nextOffset = offset,
+      format,
+    } = {}) => {
+      const params = new URLSearchParams();
+      params.set("limit", String(nextLimit));
+      params.set("offset", String(nextOffset));
+      if (nextActorCid.trim()) {
+        params.set("actorCid", nextActorCid.trim());
+      }
+      if (nextAction) {
+        params.set("action", nextAction);
+      }
+      if (nextFrom) {
+        params.set("from", nextFrom);
+      }
+      if (nextTo) {
+        params.set("to", nextTo);
+      }
+      if (format) {
+        params.set("format", format);
+      }
+      return params;
+    },
+    [action, actorCid, from, to, limit, offset],
+  );
+
+  const loadLogs = useCallback(
+    async ({
+      resetOffset = false,
+      nextAction = action,
+      nextActorCid = actorCid,
+      nextFrom = from,
+      nextTo = to,
+      nextLimit = limit,
+      nextOffset = offset,
+    } = {}) => {
+      const effectiveOffset = resetOffset ? 0 : nextOffset;
+      setLoading(true);
+      setFeedback("");
+
+      try {
+        const params = buildAuditParams({
+          nextAction,
+          nextActorCid,
+          nextFrom,
+          nextTo,
+          nextLimit,
+          nextOffset: effectiveOffset,
+        });
+
+        const result = await apiRequest({
+          path: `/admin/audit-logs?${params.toString()}`,
+          token,
+        });
+
+        setLogs(result.logs || []);
+        if (resetOffset) {
+          setOffset(0);
+        }
+      } catch (error) {
+        setFeedback(error.message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [action, actorCid, from, to, limit, offset, token, buildAuditParams],
+  );
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
+  const canGoPrev = offset > 0;
+  const canGoNext = logs.length === Number(limit);
+
+  const exportCsv = async () => {
+    try {
+      setFeedback("");
+      const params = buildAuditParams({ format: "csv" });
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params.toString()}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+        throw new Error(payload?.message || "Failed to export CSV");
+      }
+
+      const csvText = await response.text();
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const now = new Date().toISOString().replace(/[:.]/g, "-");
+      a.href = url;
+      a.download = `admin-audit-logs-${now}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  };
+
+  const applyFilters = async (event) => {
+    event.preventDefault();
+    await loadLogs({ resetOffset: true, nextOffset: 0 });
+  };
+
+  const goPrev = async () => {
+    if (!canGoPrev) return;
+    setOffset((prev) => Math.max(0, prev - Number(limit)));
+  };
+
+  const goNext = async () => {
+    if (!canGoNext) return;
+    setOffset((prev) => prev + Number(limit));
+  };
+
+  return (
+    <section className="admin-grid">
+      <form className="form-grid card-box full-width" onSubmit={applyFilters}>
+        <h3 className="full-width">Audit Log Filters</h3>
+        <label>
+          Action
+          <select value={action} onChange={(e) => setAction(e.target.value)}>
+            <option value="">All actions</option>
+            <option value="user.create">user.create</option>
+            <option value="user.role.update">user.role.update</option>
+            <option value="user.department.update">user.department.update</option>
+          </select>
+        </label>
+
+        <label>
+          Actor CID
+          <input
+            value={actorCid}
+            onChange={(e) => setActorCid(e.target.value)}
+            placeholder="Filter by actor CID"
+          />
+        </label>
+
+        <label>
+          From Date
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+
+        <label>
+          To Date
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
+
+        <label>
+          Page Size
+          <select value={String(limit)} onChange={(e) => setLimit(Number(e.target.value))}>
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+
+        <div className="audit-actions">
+          <button className="solid-btn" type="submit">
+            Apply Filters
+          </button>
+          <button
+            className="ghost-btn"
+            type="button"
+            onClick={async () => {
+              setAction("");
+              setActorCid("");
+              setFrom("");
+              setTo("");
+              setLimit(25);
+              setOffset(0);
+              await loadLogs({
+                resetOffset: true,
+                nextAction: "",
+                nextActorCid: "",
+                nextFrom: "",
+                nextTo: "",
+                nextLimit: 25,
+                nextOffset: 0,
+              });
+            }}
+          >
+            Reset
+          </button>
+          <button className="ghost-btn" type="button" onClick={exportCsv}>
+            Export CSV
+          </button>
+        </div>
+      </form>
+
+      <section className="card-box full-width">
+        <h3>Audit Logs</h3>
+        {loading ? <p className="info-box">Loading audit logs...</p> : null}
+        {feedback ? <p className="feedback">{feedback}</p> : null}
+
+        {!loading && !feedback ? (
+          <>
+            {!logs.length ? (
+              <p className="info-box">No audit logs found for current filters.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Action</th>
+                      <th>Actor</th>
+                      <th>Target User</th>
+                      <th>Old Values</th>
+                      <th>New Values</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{new Date(entry.created_at).toLocaleString()}</td>
+                        <td>{entry.action}</td>
+                        <td>{entry.actor_cid || `#${entry.actor_user_id || "-"}`}</td>
+                        <td>{entry.target_cid || `#${entry.target_user_id || "-"}`}</td>
+                        <td>
+                          <code className="json-cell">
+                            {entry.old_values
+                              ? JSON.stringify(entry.old_values)
+                              : "-"}
+                          </code>
+                        </td>
+                        <td>
+                          <code className="json-cell">
+                            {entry.new_values
+                              ? JSON.stringify(entry.new_values)
+                              : "-"}
+                          </code>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="audit-pagination">
+              <button className="ghost-btn" type="button" disabled={!canGoPrev} onClick={goPrev}>
+                Previous
+              </button>
+              <span>
+                Offset {offset} - showing up to {limit} entries
+              </span>
+              <button className="ghost-btn" type="button" disabled={!canGoNext} onClick={goNext}>
+                Next
+              </button>
+            </div>
+          </>
+        ) : null}
+      </section>
+    </section>
   );
 }
 
