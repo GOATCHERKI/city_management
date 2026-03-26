@@ -2,32 +2,15 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import MapPicker from "./components/MapPicker.jsx";
 import { API_BASE_URL, apiRequest } from "./api.js";
-
-const TOKEN_KEY = "city_mgmt_token";
-const USER_KEY = "city_mgmt_user";
+import TopBar from "./components/layout/TopBar.jsx";
+import SideNav from "./components/layout/SideNav.jsx";
+import AuthCard from "./components/auth/AuthCard.jsx";
+import { ROLE_NAV_ITEMS, TOKEN_KEY, USER_KEY } from "./constants.js";
 
 const STATUS_CLASS = {
   pending: "status status-pending",
   in_progress: "status status-progress",
   resolved: "status status-resolved",
-};
-
-const ROLE_NAV_ITEMS = {
-  citizen: [
-    { id: "report", label: "Report Issue" },
-    { id: "reports", label: "My Reports" },
-  ],
-  admin: [
-    { id: "admin-dashboard", label: "Dashboard" },
-    { id: "admin-issues", label: "All Issues" },
-    { id: "admin-assign", label: "Assign Department" },
-    { id: "admin-users", label: "User Management" },
-    { id: "admin-audit", label: "Audit Logs" },
-  ],
-  staff: [
-    { id: "staff-issues", label: "Assigned Issues" },
-    { id: "staff-update", label: "Update Status" },
-  ],
 };
 
 const readStoredJson = (key) => {
@@ -41,60 +24,17 @@ const readStoredJson = (key) => {
   }
 };
 
-function AppNavbar({ user, isAuthenticated, onLogout }) {
-  return (
-    <header className="app-navbar">
-      <div className="app-navbar-brand">
-        <p className="app-navbar-kicker">City Portal</p>
-        <h2>Urban Services Management</h2>
-      </div>
-
-      {isAuthenticated ? (
-        <div className="app-navbar-user">
-          <div>
-            <strong>{user?.fullName || user?.full_name || user?.cid}</strong>
-            <span className="role-chip">Role: {user?.role}</span>
-          </div>
-          <button className="ghost-btn" onClick={onLogout}>
-            Logout
-          </button>
-        </div>
-      ) : (
-        <p className="app-navbar-hint">Secure sign-in required to continue</p>
-      )}
-    </header>
-  );
-}
-
-function AppSidebar({ role, activeTab, onTabChange }) {
-  const items = ROLE_NAV_ITEMS[role] || [];
-  if (!items.length) return null;
-
-  return (
-    <aside className="app-sidebar">
-      <h3>Navigation</h3>
-      <nav className="app-sidebar-nav">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            className={activeTab === item.id ? "active" : ""}
-            onClick={() => onTabChange(item.id)}
-            type="button"
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-    </aside>
-  );
-}
-
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [user, setUser] = useState(() => readStoredJson(USER_KEY));
   const [activeTab, setActiveTab] = useState("report");
   const role = user?.role;
   const isAuthenticated = Boolean(token && user);
+  const roleNavItems = ROLE_NAV_ITEMS[role] || [];
+  const effectiveActiveTab = roleNavItems.some((item) => item.id === activeTab)
+    ? activeTab
+    : roleNavItems[0]?.id || activeTab;
+  const activeNavLabel = roleNavItems.find((item) => item.id === effectiveActiveTab)?.label;
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
@@ -103,19 +43,14 @@ function App() {
     setUser(null);
   };
 
-  useEffect(() => {
-    if (!role) return;
-    const validTabs = (ROLE_NAV_ITEMS[role] || []).map((item) => item.id);
-    if (!validTabs.length) return;
-    if (!validTabs.includes(activeTab)) {
-      setActiveTab(validTabs[0]);
-    }
-  }, [role, activeTab]);
-
   return (
-    <main className={`page-shell ${!isAuthenticated ? "auth-page" : ""}`.trim()}>
-      <section className={`panel ${!isAuthenticated ? "auth-panel" : ""}`.trim()}>
-        <AppNavbar user={user} isAuthenticated={isAuthenticated} onLogout={logout} />
+    <main className="page-shell">
+      <a className="skip-link" href={!isAuthenticated ? "#auth-card" : "#app-main"}>
+        Skip to content
+      </a>
+
+      <section className="panel">
+        <TopBar user={user} isAuthenticated={isAuthenticated} onLogout={logout} />
 
         {!isAuthenticated ? (
           <AuthCard
@@ -125,187 +60,47 @@ function App() {
             }}
           />
         ) : (
-          <>
-            <div className="app-layout">
-              <AppSidebar role={role} activeTab={activeTab} onTabChange={setActiveTab} />
+          <div className="app-body">
+            <SideNav role={role} activeTab={effectiveActiveTab} onTabChange={setActiveTab} />
 
-              <section className="app-content">
-                {role === "citizen" ? (
-                  <CitizenWorkspace
-                    token={token}
-                    activeTab={activeTab}
-                    onTabChange={setActiveTab}
-                  />
-                ) : null}
+            <section className="app-content" id="app-main">
+              <header className="page-head">
+                <h1 className="page-head__title">{activeNavLabel || "Workspace"}</h1>
+                <p className="page-head__meta">Official City Portal</p>
+              </header>
 
-                {role === "admin" ? (
-                  <AdminWorkspace
-                    token={token}
-                    activeTab={activeTab}
-                    onTabChange={setActiveTab}
-                  />
-                ) : null}
+              {role === "citizen" ? (
+                <CitizenWorkspace
+                  token={token}
+                  activeTab={effectiveActiveTab}
+                  onTabChange={setActiveTab}
+                />
+              ) : null}
 
-                {role === "staff" ? (
-                  <StaffWorkspace
-                    token={token}
-                    activeTab={activeTab}
-                    onTabChange={setActiveTab}
-                  />
-                ) : null}
+              {role === "admin" ? (
+                <AdminWorkspace
+                  token={token}
+                  activeTab={effectiveActiveTab}
+                  onTabChange={setActiveTab}
+                />
+              ) : null}
 
-                {!role || !["citizen", "admin", "staff"].includes(role) ? (
-                  <p className="info-box">Unknown role: {String(role || "none")}</p>
-                ) : null}
-              </section>
-            </div>
-          </>
+              {role === "staff" ? (
+                <StaffWorkspace
+                  token={token}
+                  activeTab={effectiveActiveTab}
+                  onTabChange={setActiveTab}
+                />
+              ) : null}
+
+              {!role || !["citizen", "admin", "staff"].includes(role) ? (
+                <p className="info-box">Unknown role: {String(role || "none")}</p>
+              ) : null}
+            </section>
+          </div>
         )}
       </section>
     </main>
-  );
-}
-
-function AuthCard({ onAuthenticated }) {
-  const [mode, setMode] = useState("login");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const [cid, setCid] = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-
-  const submitLabel = mode === "login" ? "Login" : "Register";
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setMessage("");
-    setLoading(true);
-
-    try {
-      if (mode === "register") {
-        await apiRequest({
-          path: "/auth/register",
-          method: "POST",
-          body: { cid, fullName, email, password },
-        });
-        setMode("login");
-        setMessage("Registered. Verify email from backend log, then login.");
-      } else {
-        const result = await apiRequest({
-          path: "/auth/login",
-          method: "POST",
-          body: { cid, password },
-        });
-        localStorage.setItem(TOKEN_KEY, result.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(result.user));
-        onAuthenticated({ nextToken: result.token, nextUser: result.user });
-      }
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <section className="auth-card">
-      <div className="auth-form-pane">
-        <p className="auth-kicker">Citizen Access Portal</p>
-        <h2>{mode === "login" ? "Sign In to Continue" : "Create Your Account"}</h2>
-        <p className="auth-subcopy">
-          Access services, track city issues, and receive verified updates from municipal teams.
-        </p>
-
-        <div className="mode-switch">
-          <button
-            className={mode === "login" ? "active" : ""}
-            onClick={() => setMode("login")}
-            type="button"
-          >
-            Login
-          </button>
-          <button
-            className={mode === "register" ? "active" : ""}
-            onClick={() => setMode("register")}
-            type="button"
-          >
-            Register
-          </button>
-        </div>
-
-        <form className="form-grid auth-form" onSubmit={handleSubmit}>
-          {mode === "register" ? (
-            <label>
-              Full Name
-              <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-            </label>
-          ) : null}
-
-          <label>
-            CID
-            <input value={cid} onChange={(e) => setCid(e.target.value)} required />
-          </label>
-
-          {mode === "register" ? (
-            <label>
-              Email
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                required
-              />
-            </label>
-          ) : null}
-
-          <label>
-            Password
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              required
-            />
-          </label>
-
-          <button className="solid-btn auth-submit" disabled={loading}>
-            {loading ? "Please wait..." : submitLabel}
-          </button>
-        </form>
-
-        {message ? <p className="feedback auth-feedback">{message}</p> : null}
-      </div>
-
-      <aside className="auth-side-pane">
-        <div className="auth-side-overlay" />
-        <div className="auth-side-content">
-          <h3>Digital Public Services</h3>
-          <p>
-            A secure and transparent city platform built to connect residents with responsive
-            government services.
-          </p>
-
-          <ul className="auth-feature-list">
-            <li>Real-time issue tracking across departments</li>
-            <li>Role-based accountability with audit trails</li>
-            <li>Clear communication from report to resolution</li>
-          </ul>
-
-          <div className="auth-metric-row">
-            <article>
-              <strong>24/7</strong>
-              <span>Service Access</span>
-            </article>
-            <article>
-              <strong>100%</strong>
-              <span>Traceable Updates</span>
-            </article>
-          </div>
-        </div>
-      </aside>
-    </section>
   );
 }
 
@@ -1118,7 +913,7 @@ function AdminUserManagement({ token }) {
         <button className="solid-btn">Create User</button>
       </form>
 
-      <form className="form-grid card-box" onSubmit={submitRoleUpdate}>
+      <form className="form-grid card-box role-update-form" onSubmit={submitRoleUpdate}>
         <h3 className="full-width">Change User Role</h3>
         <label>
           User
@@ -1160,7 +955,7 @@ function AdminUserManagement({ token }) {
             ))}
           </select>
         </label>
-        <button className="solid-btn">Update Role</button>
+        <button className="solid-btn user-role-update-btn">Update Role</button>
       </form>
 
       <form className="form-grid card-box" onSubmit={submitDepartmentUpdate}>
@@ -1356,7 +1151,7 @@ function AdminAuditLogs({ token }) {
       nextQ: debouncedQ,
       nextOffset: 0,
     });
-  }, [debouncedQ]);
+  }, [debouncedQ, q, loadLogs]);
 
   const canGoPrev = offset > 0;
   const canGoNext = offset + logs.length < total;
