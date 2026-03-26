@@ -449,6 +449,13 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
     <section className="workspace">
       <div className="tab-row">
         <button
+          className={activeTab === "admin-dashboard" ? "active" : ""}
+          onClick={() => onTabChange("admin-dashboard")}
+          type="button"
+        >
+          Dashboard
+        </button>
+        <button
           className={activeTab === "admin-issues" ? "active" : ""}
           onClick={() => onTabChange("admin-issues")}
           type="button"
@@ -482,6 +489,8 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
         <AdminUserManagement token={token} />
       ) : activeTab === "admin-audit" ? (
         <AdminAuditLogs token={token} />
+      ) : activeTab === "admin-dashboard" ? (
+        <AdminDashboard token={token} />
       ) : activeTab === "admin-assign" ? (
         <AssignIssueForm
           token={token}
@@ -493,6 +502,110 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
       ) : (
         <AllIssues token={token} refreshKey={refreshKey} canAssign={false} />
       )}
+    </section>
+  );
+}
+
+function AdminDashboard({ token }) {
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    activeDepartments: 0,
+    recentActions: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadStats = async () => {
+      setLoading(true);
+      setFeedback("");
+      try {
+        const result = await apiRequest({
+          path: "/admin/dashboard",
+          token,
+        });
+        if (mounted) {
+          setStats({
+            totalUsers: Number(result.totalUsers || 0),
+            activeDepartments: Number(result.activeDepartments || 0),
+            recentActions: result.recentActions || [],
+          });
+        }
+      } catch (error) {
+        if (mounted) {
+          setFeedback(error.message);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadStats();
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  return (
+    <section className="admin-grid">
+      <section className="card-box full-width">
+        <h3>Admin Dashboard</h3>
+        {loading ? <p className="info-box">Loading dashboard...</p> : null}
+        {feedback ? <p className="feedback">{feedback}</p> : null}
+
+        {!loading && !feedback ? (
+          <div className="dashboard-stats">
+            <article className="stat-card">
+              <p className="stat-label">Total Users</p>
+              <p className="stat-value">{stats.totalUsers}</p>
+            </article>
+            <article className="stat-card">
+              <p className="stat-label">Active Departments</p>
+              <p className="stat-value">{stats.activeDepartments}</p>
+            </article>
+            <article className="stat-card">
+              <p className="stat-label">Recent Admin Actions</p>
+              <p className="stat-value">{stats.recentActions.length}</p>
+            </article>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card-box full-width">
+        <h3>Recent Audit Actions</h3>
+        {!loading && !feedback && !stats.recentActions.length ? (
+          <p className="info-box">No audit actions yet.</p>
+        ) : null}
+
+        {!loading && !feedback && stats.recentActions.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Action</th>
+                  <th>Actor</th>
+                  <th>Target</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recentActions.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{new Date(entry.created_at).toLocaleString()}</td>
+                    <td>{entry.action}</td>
+                    <td>{entry.actor_cid || "-"}</td>
+                    <td>{entry.target_cid || `#${entry.target_user_id || "-"}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
     </section>
   );
 }
@@ -1064,6 +1177,7 @@ function AdminAuditLogs({ token }) {
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
+  const [q, setQ] = useState("");
   const [action, setAction] = useState("");
   const [actorCid, setActorCid] = useState("");
   const [from, setFrom] = useState("");
@@ -1073,6 +1187,7 @@ function AdminAuditLogs({ token }) {
 
   const buildAuditParams = useCallback(
     ({
+      nextQ = q,
       nextAction = action,
       nextActorCid = actorCid,
       nextFrom = from,
@@ -1084,6 +1199,9 @@ function AdminAuditLogs({ token }) {
       const params = new URLSearchParams();
       params.set("limit", String(nextLimit));
       params.set("offset", String(nextOffset));
+      if (nextQ.trim()) {
+        params.set("q", nextQ.trim());
+      }
       if (nextActorCid.trim()) {
         params.set("actorCid", nextActorCid.trim());
       }
@@ -1101,12 +1219,13 @@ function AdminAuditLogs({ token }) {
       }
       return params;
     },
-    [action, actorCid, from, to, limit, offset],
+    [q, action, actorCid, from, to, limit, offset],
   );
 
   const loadLogs = useCallback(
     async ({
       resetOffset = false,
+      nextQ = q,
       nextAction = action,
       nextActorCid = actorCid,
       nextFrom = from,
@@ -1120,6 +1239,7 @@ function AdminAuditLogs({ token }) {
 
       try {
         const params = buildAuditParams({
+          nextQ,
           nextAction,
           nextActorCid,
           nextFrom,
@@ -1144,7 +1264,7 @@ function AdminAuditLogs({ token }) {
         setLoading(false);
       }
     },
-    [action, actorCid, from, to, limit, offset, token, buildAuditParams],
+    [q, action, actorCid, from, to, limit, offset, token, buildAuditParams],
   );
 
   useEffect(() => {
@@ -1211,6 +1331,15 @@ function AdminAuditLogs({ token }) {
       <form className="form-grid card-box full-width" onSubmit={applyFilters}>
         <h3 className="full-width">Audit Log Filters</h3>
         <label>
+          Search
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search actor, action, or target"
+          />
+        </label>
+
+        <label>
           Action
           <select value={action} onChange={(e) => setAction(e.target.value)}>
             <option value="">All actions</option>
@@ -1257,6 +1386,7 @@ function AdminAuditLogs({ token }) {
             className="ghost-btn"
             type="button"
             onClick={async () => {
+              setQ("");
               setAction("");
               setActorCid("");
               setFrom("");
@@ -1265,6 +1395,7 @@ function AdminAuditLogs({ token }) {
               setOffset(0);
               await loadLogs({
                 resetOffset: true,
+                nextQ: "",
                 nextAction: "",
                 nextActorCid: "",
                 nextFrom: "",

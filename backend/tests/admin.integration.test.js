@@ -34,6 +34,7 @@ const buildMockDb = () => {
     let actorUserId = null;
     let actorCid = null;
     let action = null;
+    let q = null;
     let from = null;
     let to = null;
 
@@ -49,6 +50,17 @@ const buildMockDb = () => {
 
     if (sql.includes("a.action =")) {
       action = String(values[index] || "");
+      index += 1;
+    }
+
+    if (
+      sql.includes("lower(a.actor_cid) like") ||
+      sql.includes("lower(a.action) like") ||
+      sql.includes("lower(target.cid) like")
+    ) {
+      q = String(values[index] || "")
+        .toLowerCase()
+        .replace(/%/g, "");
       index += 1;
     }
 
@@ -69,6 +81,16 @@ const buildMockDb = () => {
       if (actorCid && String(entry.actor_cid || "").toLowerCase() !== actorCid)
         return false;
       if (action && String(entry.action) !== action) return false;
+
+      if (q) {
+        const target = state.users.find(
+          (item) => item.id === entry.target_user_id,
+        );
+        const haystack = [entry.actor_cid, entry.action, target?.cid]
+          .map((value) => String(value || "").toLowerCase())
+          .join(" ");
+        if (!haystack.includes(q)) return false;
+      }
 
       const createdAt = new Date(entry.created_at);
       if (from && createdAt < from) return false;
@@ -230,6 +252,65 @@ const buildMockDb = () => {
 
   const query = async (sqlText, params = []) => {
     const sql = String(sqlText).replace(/\s+/g, " ").trim().toLowerCase();
+
+    if (sql.includes("select count(*)::int as total from users")) {
+      return {
+        rowCount: 1,
+        rows: [{ total: state.users.length }],
+      };
+    }
+
+    if (
+      sql.includes(
+        "select count(distinct department_id)::int as total from users where department_id is not null",
+      )
+    ) {
+      const active = new Set(
+        state.users
+          .map((user) => user.department_id)
+          .filter(
+            (departmentId) =>
+              departmentId !== null && departmentId !== undefined,
+          ),
+      );
+      return {
+        rowCount: 1,
+        rows: [{ total: active.size }],
+      };
+    }
+
+    if (
+      sql.includes(
+        "select a.id, a.actor_cid, a.target_user_id, a.action, a.created_at",
+      ) &&
+      sql.includes("limit 10")
+    ) {
+      const recent = [...state.logs]
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )
+        .slice(0, 10)
+        .map((entry) => {
+          const target = state.users.find(
+            (item) => item.id === entry.target_user_id,
+          );
+          return {
+            id: entry.id,
+            actor_cid: entry.actor_cid,
+            target_user_id: entry.target_user_id,
+            action: entry.action,
+            created_at: entry.created_at,
+            target_cid: target?.cid || null,
+            target_name: target?.full_name || null,
+          };
+        });
+
+      return {
+        rowCount: recent.length,
+        rows: recent,
+      };
+    }
 
     if (sql.includes("select count(*)::int as total from admin_audit_logs a")) {
       const { logs } = filterLogs(sql, params);
@@ -512,4 +593,98 @@ test("GET /api/admin/audit-logs filters correctly by from/to date range", async 
   assert.equal(response.body.logs.length, 1);
   assert.equal(response.body.logs[0].action, "user.role.update");
   assert.equal(response.body.logs[0].target_cid, "admin1");
+});
+
+test("GET /api/admin/audit-logs rejects invalid date range (from > to)", async () => {
+  const response = await request(app)
+    .get(
+      "/api/admin/audit-logs?from=2026-03-27&to=2026-03-26&limit=25&offset=0",
+    )
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  assert.equal(response.status, 400);
+  assert(response.body.message);
+  assert.equal(response.body.errors.length > 0, true);
+});
+
+test("GET /api/admin/audit-logs returns 403 for non-admin user", async () => {
+  // Create a citizen user token (not admin)
+  const citizenToken = jwt.sign(
+    {
+      id: 999,
+      cid: "citizen1",
+      role: "citizen",
+      email: "citizen@example.com",
+    },
+    process.env.JWT_SECRET,
+  );
+
+  const response = await request(app)
+    .get("/api/admin/audit-logs?limit=25&offset=0")
+    .set("Authorization", `Bearer ${citizenToken}`);
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /api/admin/audit-logs supports free-text q search", async () => {
+  db.state.logs = [
+    {
+      id: 1,
+      actor_user_id: 1,
+      actor_cid: "admin1",
+      target_user_id: 1,
+      action: "user.create",
+      old_values: null,
+      new_values: { role: "staff", departmentId: 1 },
+      ip_address: "::1",
+      user_agent: "test-agent",
+      created_at: new Date("2026-03-25T09:00:00.000Z"),
+    },
+    {
+      id: 2,
+      actor_user_id: 1,
+      actor_cid: "admin1",
+      target_user_id: 1,
+      action: "user.department.update",
+      old_values: { role: "staff", departmentId: 1 },
+      new_values: { role: "staff", departmentId: 3 },
+      ip_address: "::1",
+      user_agent: "test-agent",
+      created_at: new Date("2026-03-26T10:00:00.000Z"),
+    },
+  ];
+
+  const response = await request(app)
+    .get("/api/admin/audit-logs?q=department&limit=25&offset=0")
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.total, 1);
+  assert.equal(response.body.logs.length, 1);
+  assert.equal(response.body.logs[0].action, "user.department.update");
+});
+
+test("GET /api/admin/dashboard returns summary cards and recent actions", async () => {
+  await request(app)
+    .post("/api/admin/users")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({
+      cid: "staff-dashboard",
+      fullName: "Dashboard Staff",
+      email: "staff-dashboard@example.com",
+      password: "StrongPass123",
+      role: "staff",
+      departmentId: 2,
+    });
+
+  const response = await request(app)
+    .get("/api/admin/dashboard")
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  assert.equal(response.status, 200);
+  assert.equal(typeof response.body.totalUsers, "number");
+  assert.equal(typeof response.body.activeDepartments, "number");
+  assert.equal(Array.isArray(response.body.recentActions), true);
+  assert.equal(response.body.totalUsers >= 2, true);
+  assert.equal(response.body.activeDepartments >= 1, true);
 });

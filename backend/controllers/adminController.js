@@ -385,6 +385,7 @@ export const listAdminAuditLogs = async (req, res) => {
   const query = req.validated?.query || req.query || {};
   const limit = Number(query.limit || 50);
   const offset = Number(query.offset || 0);
+  const q = query.q ? String(query.q).trim().toLowerCase() : null;
   const actorCid = query.actorCid
     ? String(query.actorCid).trim().toLowerCase()
     : null;
@@ -429,6 +430,13 @@ export const listAdminAuditLogs = async (req, res) => {
     );
   }
 
+  if (q) {
+    values.push(`%${q}%`);
+    conditions.push(
+      `(LOWER(a.actor_cid) LIKE $${values.length} OR LOWER(a.action) LIKE $${values.length} OR LOWER(target.cid) LIKE $${values.length})`,
+    );
+  }
+
   const whereClause = conditions.length
     ? `WHERE ${conditions.join(" AND ")}`
     : "";
@@ -437,6 +445,7 @@ export const listAdminAuditLogs = async (req, res) => {
     const countQuery = `
       SELECT COUNT(*)::int AS total
       FROM admin_audit_logs a
+      LEFT JOIN users target ON target.id = a.target_user_id
       ${whereClause};
     `;
     const countResult = await pool.query(countQuery, values);
@@ -545,6 +554,49 @@ export const listAdminAuditLogs = async (req, res) => {
     }
 
     return res.json({ logs: result.rows, total, limit, offset });
+  } catch (error) {
+    return handleAdminDbError(res, error);
+  }
+};
+
+export const getDashboardStats = async (req, res) => {
+  try {
+    // Get total user count
+    const usersResult = await pool.query(
+      "SELECT COUNT(*)::int AS total FROM users",
+    );
+    const totalUsers = Number(usersResult.rows?.[0]?.total || 0);
+
+    // Get active departments count (departments with at least one staff member)
+    const deptResult = await pool.query(
+      "SELECT COUNT(DISTINCT department_id)::int AS total FROM users WHERE department_id IS NOT NULL",
+    );
+    const activeDepartments = Number(deptResult.rows?.[0]?.total || 0);
+
+    // Get recent audit actions (last 10 logs)
+    const logsResult = await pool.query(
+      `
+      SELECT
+        a.id,
+        a.actor_cid,
+        a.target_user_id,
+        a.action,
+        a.created_at,
+        u.cid AS target_cid,
+        u.full_name AS target_name
+      FROM admin_audit_logs a
+      LEFT JOIN users u ON a.target_user_id = u.id
+      ORDER BY a.created_at DESC
+      LIMIT 10
+      `,
+    );
+    const recentActions = logsResult.rows || [];
+
+    return res.json({
+      totalUsers,
+      activeDepartments,
+      recentActions,
+    });
   } catch (error) {
     return handleAdminDbError(res, error);
   }

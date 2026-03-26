@@ -55,6 +55,7 @@ export const updateUserDepartmentSchema = z.object({
 export const auditLogQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
   actorCid: z.string().trim().min(1).max(50).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

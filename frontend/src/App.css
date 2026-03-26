@@ -309,6 +309,31 @@ td {
   padding: 5px 7px;
 }
 
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f3fbf5;
+  padding: 10px;
+}
+
+.stat-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.stat-value {
+  margin: 4px 0 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
 @media (max-width: 760px) {
   .page-shell {
     padding: 12px;
@@ -335,5 +360,9 @@ td {
   .audit-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .dashboard-stats {
+    grid-template-columns: 1fr;
   }
 }

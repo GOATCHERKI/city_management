@@ -7,6 +7,7 @@ import {
   listUsers,
   updateUserDepartment,
   updateUserRole,
+  getDashboardStats,
 } from "../controllers/adminController.js";
 import {
   auditLogQuerySchema,
@@ -21,6 +22,7 @@ const router = express.Router();
 router.use(verifyToken, authorizeRoles("admin"));
 
 router.get("/users", listUsers);
+router.get("/dashboard", getDashboardStats);
 router.get(
   "/audit-logs",
   validateRequest({ querySchema: auditLogQuerySchema }),
