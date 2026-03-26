@@ -429,16 +429,23 @@ export const listAdminAuditLogs = async (req, res) => {
     );
   }
 
-  values.push(limit);
-  const limitPlaceholder = `$${values.length}`;
-  values.push(offset);
-  const offsetPlaceholder = `$${values.length}`;
-
   const whereClause = conditions.length
     ? `WHERE ${conditions.join(" AND ")}`
     : "";
 
   try {
+    const countQuery = `
+      SELECT COUNT(*)::int AS total
+      FROM admin_audit_logs a
+      ${whereClause};
+    `;
+    const countResult = await pool.query(countQuery, values);
+    const total = Number(countResult.rows?.[0]?.total || 0);
+
+    const paginatedValues = [...values, limit, offset];
+    const limitPlaceholder = `$${paginatedValues.length - 1}`;
+    const offsetPlaceholder = `$${paginatedValues.length}`;
+
     const baseQuery = `
       SELECT a.id, a.actor_user_id, a.actor_cid, a.target_user_id, a.action,
              a.old_values, a.new_values, a.ip_address, a.user_agent, a.created_at,
@@ -451,7 +458,7 @@ export const listAdminAuditLogs = async (req, res) => {
       OFFSET ${offsetPlaceholder};
     `;
 
-    const result = await pool.query(baseQuery, values);
+    const result = await pool.query(baseQuery, paginatedValues);
 
     if (format === "csv") {
       const normalizeObject = (value) => {
@@ -537,7 +544,7 @@ export const listAdminAuditLogs = async (req, res) => {
         .send(`\uFEFF${lines.join("\r\n")}`);
     }
 
-    return res.json({ logs: result.rows });
+    return res.json({ logs: result.rows, total, limit, offset });
   } catch (error) {
     return handleAdminDbError(res, error);
   }

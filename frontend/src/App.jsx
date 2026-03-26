@@ -1060,6 +1060,7 @@ function AdminUserManagement({ token }) {
 
 function AdminAuditLogs({ token }) {
   const [logs, setLogs] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
@@ -1133,6 +1134,7 @@ function AdminAuditLogs({ token }) {
         });
 
         setLogs(result.logs || []);
+        setTotal(Number(result.total || 0));
         if (resetOffset) {
           setOffset(0);
         }
@@ -1150,7 +1152,7 @@ function AdminAuditLogs({ token }) {
   }, [loadLogs]);
 
   const canGoPrev = offset > 0;
-  const canGoNext = logs.length === Number(limit);
+  const canGoNext = offset + logs.length < total;
 
   const exportCsv = async () => {
     try {
@@ -1335,7 +1337,7 @@ function AdminAuditLogs({ token }) {
                 Previous
               </button>
               <span>
-                Offset {offset} - showing up to {limit} entries
+                Offset {offset} - showing {logs.length} of {total} entries
               </span>
               <button className="ghost-btn" type="button" disabled={!canGoNext} onClick={goNext}>
                 Next
