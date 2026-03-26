@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import L from "leaflet";
 import "./App.css";
 import MapPicker from "./components/MapPicker.jsx";
 import { API_BASE_URL, apiRequest } from "./api.js";
@@ -12,6 +14,15 @@ const STATUS_CLASS = {
   in_progress: "status status-progress",
   resolved: "status status-resolved",
 };
+
+const ISTANBUL_CENTER = [41.0082, 28.9784];
+
+const issueMarkerIcon = new L.Icon({
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
 
 const readStoredJson = (key) => {
   const value = localStorage.getItem(key);
@@ -247,6 +258,30 @@ function MyReports({ token, refreshKey }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const mappedIssues = useMemo(() => {
+    return issues
+      .map((item) => {
+        const lat = Number(item.latitude);
+        const lng = Number(item.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return {
+          ...item,
+          lat,
+          lng,
+        };
+      })
+      .filter(Boolean);
+  }, [issues]);
+
+  const mapCenter = useMemo(() => {
+    if (!mappedIssues.length) return ISTANBUL_CENTER;
+    const sum = mappedIssues.reduce(
+      (acc, item) => ({ lat: acc.lat + item.lat, lng: acc.lng + item.lng }),
+      { lat: 0, lng: 0 },
+    );
+    return [sum.lat / mappedIssues.length, sum.lng / mappedIssues.length];
+  }, [mappedIssues]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -280,43 +315,77 @@ function MyReports({ token, refreshKey }) {
   if (!issues.length) return <p className="info-box">No reports yet.</p>;
 
   return (
-    <div className="report-list">
-      {issues.map((item) => (
-        <article className="report-card" key={item.id}>
-          <div className="report-head">
-            <h3>{item.title}</h3>
-            <span className={STATUS_CLASS[item.status] || "status"}>{item.status}</span>
+    <section className="all-issues-layout">
+      {mappedIssues.length ? (
+        <section className="all-issues-map-card" aria-label="My reports map">
+          <div className="all-issues-map-head">
+            <h3>My Reports Map</h3>
+            <p>{mappedIssues.length} mapped reports</p>
           </div>
-          <p>{item.description}</p>
-          <div className="meta-row">
-            <span>Category: {item.category}</span>
-            <span>
-              Coords: {item.latitude}, {item.longitude}
-            </span>
-          </div>
-          <div className="meta-row">
-            <span>Department: {item.assigned_department_name || "Unassigned"}</span>
-            <span>{new Date(item.created_at).toLocaleString()}</span>
-          </div>
-          {item.photo_url ? (
-            <img
-              src={item.photo_url}
-              alt={`Issue ${item.id}`}
-              className="issue-photo"
-              loading="lazy"
-              onError={(event) => {
-                event.currentTarget.style.display = "none";
-              }}
+          <MapContainer
+            key={`my-reports-map-${mappedIssues.length}`}
+            center={mapCenter}
+            zoom={11}
+            scrollWheelZoom
+            className="all-issues-map"
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-          ) : null}
-          {item.photo_url ? (
-            <a href={item.photo_url} target="_blank" rel="noreferrer" className="photo-link">
-              View Photo
-            </a>
-          ) : null}
-        </article>
-      ))}
-    </div>
+            {mappedIssues.map((item) => (
+              <Marker key={item.id} position={[item.lat, item.lng]} icon={issueMarkerIcon}>
+                <Popup>
+                  <strong>{item.title}</strong>
+                  <br />
+                  Status: {item.status}
+                  <br />
+                  Category: {item.category}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </section>
+      ) : null}
+
+      <div className="report-list">
+        {issues.map((item) => (
+          <article className="report-card" key={item.id}>
+            <div className="report-head">
+              <h3>{item.title}</h3>
+              <span className={STATUS_CLASS[item.status] || "status"}>{item.status}</span>
+            </div>
+            <p>{item.description}</p>
+            <div className="meta-row">
+              <span>Category: {item.category}</span>
+              <span>
+                Coords: {item.latitude}, {item.longitude}
+              </span>
+            </div>
+            <div className="meta-row">
+              <span>Department: {item.assigned_department_name || "Unassigned"}</span>
+              <span>{new Date(item.created_at).toLocaleString()}</span>
+            </div>
+            {item.photo_url ? (
+              <img
+                src={item.photo_url}
+                alt={`Issue ${item.id}`}
+                className="issue-photo"
+                loading="lazy"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+            ) : null}
+            {item.photo_url ? (
+              <a href={item.photo_url} target="_blank" rel="noreferrer" className="photo-link">
+                View Photo
+              </a>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -512,6 +581,30 @@ function AllIssues({ token, refreshKey }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const mappedIssues = useMemo(() => {
+    return issues
+      .map((item) => {
+        const lat = Number(item.latitude);
+        const lng = Number(item.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return {
+          ...item,
+          lat,
+          lng,
+        };
+      })
+      .filter(Boolean);
+  }, [issues]);
+
+  const mapCenter = useMemo(() => {
+    if (!mappedIssues.length) return ISTANBUL_CENTER;
+    const sum = mappedIssues.reduce(
+      (acc, item) => ({ lat: acc.lat + item.lat, lng: acc.lng + item.lng }),
+      { lat: 0, lng: 0 },
+    );
+    return [sum.lat / mappedIssues.length, sum.lng / mappedIssues.length];
+  }, [mappedIssues]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -541,43 +634,77 @@ function AllIssues({ token, refreshKey }) {
   if (!issues.length) return <p className="info-box">No issues available.</p>;
 
   return (
-    <div className="report-list">
-      {issues.map((item) => (
-        <article className="report-card" key={item.id}>
-          <div className="report-head">
-            <h3>#{item.id} {item.title}</h3>
-            <span className={STATUS_CLASS[item.status] || "status"}>{item.status}</span>
+    <section className="all-issues-layout">
+      {mappedIssues.length ? (
+        <section className="all-issues-map-card" aria-label="Issues map">
+          <div className="all-issues-map-head">
+            <h3>Issues Map</h3>
+            <p>{mappedIssues.length} mapped issues</p>
           </div>
-          <p>{item.description}</p>
-          <div className="meta-row">
-            <span>Category: {item.category}</span>
-            <span>
-              Coords: {item.latitude}, {item.longitude}
-            </span>
-          </div>
-          <div className="meta-row">
-            <span>Created by: {item.created_by_name || item.created_by}</span>
-            <span>Department: {item.assigned_department_name || "Unassigned"}</span>
-          </div>
-          {item.photo_url ? (
-            <img
-              src={item.photo_url}
-              alt={`Issue ${item.id}`}
-              className="issue-photo"
-              loading="lazy"
-              onError={(event) => {
-                event.currentTarget.style.display = "none";
-              }}
+          <MapContainer
+            key={`issues-map-${mappedIssues.length}`}
+            center={mapCenter}
+            zoom={11}
+            scrollWheelZoom
+            className="all-issues-map"
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-          ) : null}
-          {item.photo_url ? (
-            <a href={item.photo_url} target="_blank" rel="noreferrer" className="photo-link">
-              View Photo
-            </a>
-          ) : null}
-        </article>
-      ))}
-    </div>
+            {mappedIssues.map((item) => (
+              <Marker key={item.id} position={[item.lat, item.lng]} icon={issueMarkerIcon}>
+                <Popup>
+                  <strong>#{item.id} {item.title}</strong>
+                  <br />
+                  Status: {item.status}
+                  <br />
+                  Category: {item.category}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </section>
+      ) : null}
+
+      <div className="report-list">
+        {issues.map((item) => (
+          <article className="report-card" key={item.id}>
+            <div className="report-head">
+              <h3>#{item.id} {item.title}</h3>
+              <span className={STATUS_CLASS[item.status] || "status"}>{item.status}</span>
+            </div>
+            <p>{item.description}</p>
+            <div className="meta-row">
+              <span>Category: {item.category}</span>
+              <span>
+                Coords: {item.latitude}, {item.longitude}
+              </span>
+            </div>
+            <div className="meta-row">
+              <span>Created by: {item.created_by_name || item.created_by}</span>
+              <span>Department: {item.assigned_department_name || "Unassigned"}</span>
+            </div>
+            {item.photo_url ? (
+              <img
+                src={item.photo_url}
+                alt={`Issue ${item.id}`}
+                className="issue-photo"
+                loading="lazy"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+            ) : null}
+            {item.photo_url ? (
+              <a href={item.photo_url} target="_blank" rel="noreferrer" className="photo-link">
+                View Photo
+              </a>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
