@@ -560,6 +560,19 @@ export const listAdminAuditLogs = async (req, res) => {
 };
 
 export const getDashboardStats = async (req, res) => {
+  const query = req.validated?.query || req.query || {};
+  const range = query.range ? String(query.range) : "7d";
+
+  const now = new Date();
+  let rangeStart = new Date(now);
+  if (range === "today") {
+    rangeStart.setHours(0, 0, 0, 0);
+  } else if (range === "30d") {
+    rangeStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else {
+    rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  }
+
   try {
     // Get total user count
     const usersResult = await pool.query(
@@ -572,6 +585,33 @@ export const getDashboardStats = async (req, res) => {
       "SELECT COUNT(DISTINCT department_id)::int AS total FROM users WHERE department_id IS NOT NULL",
     );
     const activeDepartments = Number(deptResult.rows?.[0]?.total || 0);
+
+    const actionsLast24hResult = await pool.query(
+      "SELECT COUNT(*)::int AS total FROM admin_audit_logs WHERE created_at >= (NOW() - INTERVAL '24 hours')",
+    );
+    const actionsLast24h = Number(actionsLast24hResult.rows?.[0]?.total || 0);
+
+    const breakdownResult = await pool.query(
+      `
+      SELECT action, COUNT(*)::int AS total
+      FROM admin_audit_logs
+      WHERE created_at >= $1::timestamptz
+      GROUP BY action
+      `,
+      [rangeStart.toISOString()],
+    );
+
+    const actionBreakdown = {
+      "user.create": 0,
+      "user.role.update": 0,
+      "user.department.update": 0,
+    };
+
+    for (const row of breakdownResult.rows || []) {
+      if (Object.prototype.hasOwnProperty.call(actionBreakdown, row.action)) {
+        actionBreakdown[row.action] = Number(row.total || 0);
+      }
+    }
 
     // Get recent audit actions (last 10 logs)
     const logsResult = await pool.query(
@@ -586,15 +626,20 @@ export const getDashboardStats = async (req, res) => {
         u.full_name AS target_name
       FROM admin_audit_logs a
       LEFT JOIN users u ON a.target_user_id = u.id
+      WHERE a.created_at >= $1::timestamptz
       ORDER BY a.created_at DESC
       LIMIT 10
       `,
+      [rangeStart.toISOString()],
     );
     const recentActions = logsResult.rows || [];
 
     return res.json({
+      range,
       totalUsers,
       activeDepartments,
+      actionsLast24h,
+      actionBreakdown,
       recentActions,
     });
   } catch (error) {

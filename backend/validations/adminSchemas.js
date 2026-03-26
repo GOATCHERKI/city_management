@@ -52,23 +52,35 @@ export const updateUserDepartmentSchema = z.object({
   departmentId: nullableDepartmentIdSchema,
 });
 
-export const auditLogQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-  q: z.string().trim().min(1).max(100).optional(),
-  actorCid: z.string().trim().min(1).max(50).optional(),
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  format: z.enum(["json", "csv"]).optional(),
-  action: z
-    .enum(["user.create", "user.role.update", "user.department.update"])
-    .optional(),
-}).superRefine((value, context) => {
-  if (value.from && value.to && value.from > value.to) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["from"],
-      message: "from must be less than or equal to to",
-    });
-  }
+export const auditLogQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+    offset: z.coerce.number().int().min(0).optional(),
+    q: z.string().trim().min(1).max(100).optional(),
+    actorCid: z.string().trim().min(1).max(50).optional(),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    format: z.enum(["json", "csv"]).optional(),
+    action: z
+      .enum(["user.create", "user.role.update", "user.department.update"])
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.from && value.to && value.from > value.to) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "from must be less than or equal to to",
+      });
+    }
+  });
+
+export const dashboardQuerySchema = z.object({
+  range: z.enum(["today", "7d", "30d"]).optional(),
 });

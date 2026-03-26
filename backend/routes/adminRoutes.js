@@ -12,6 +12,7 @@ import {
 import {
   auditLogQuerySchema,
   createUserByAdminSchema,
+  dashboardQuerySchema,
   updateUserDepartmentSchema,
   updateUserRoleSchema,
   userIdParamSchema,
@@ -22,7 +23,11 @@ const router = express.Router();
 router.use(verifyToken, authorizeRoles("admin"));
 
 router.get("/users", listUsers);
-router.get("/dashboard", getDashboardStats);
+router.get(
+  "/dashboard",
+  validateRequest({ querySchema: dashboardQuerySchema }),
+  getDashboardStats,
+);
 router.get(
   "/audit-logs",
   validateRequest({ querySchema: auditLogQuerySchema }),

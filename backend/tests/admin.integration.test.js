@@ -262,6 +262,22 @@ const buildMockDb = () => {
 
     if (
       sql.includes(
+        "select count(*)::int as total from admin_audit_logs where created_at >= (now() - interval '24 hours')",
+      )
+    ) {
+      const threshold = Date.now() - 24 * 60 * 60 * 1000;
+      const total = state.logs.filter(
+        (entry) => new Date(entry.created_at).getTime() >= threshold,
+      ).length;
+
+      return {
+        rowCount: 1,
+        rows: [{ total }],
+      };
+    }
+
+    if (
+      sql.includes(
         "select count(distinct department_id)::int as total from users where department_id is not null",
       )
     ) {
@@ -309,6 +325,28 @@ const buildMockDb = () => {
       return {
         rowCount: recent.length,
         rows: recent,
+      };
+    }
+
+    if (
+      sql.includes("select action, count(*)::int as total from admin_audit_logs") &&
+      sql.includes("group by action")
+    ) {
+      const threshold = new Date(params[0]).getTime();
+      const counts = new Map();
+
+      for (const entry of state.logs) {
+        if (new Date(entry.created_at).getTime() >= threshold) {
+          counts.set(entry.action, Number(counts.get(entry.action) || 0) + 1);
+        }
+      }
+
+      return {
+        rowCount: counts.size,
+        rows: Array.from(counts.entries()).map(([actionName, total]) => ({
+          action: actionName,
+          total,
+        })),
       };
     }
 
@@ -684,7 +722,33 @@ test("GET /api/admin/dashboard returns summary cards and recent actions", async 
   assert.equal(response.status, 200);
   assert.equal(typeof response.body.totalUsers, "number");
   assert.equal(typeof response.body.activeDepartments, "number");
+  assert.equal(typeof response.body.actionsLast24h, "number");
+  assert.equal(typeof response.body.actionBreakdown, "object");
+  assert.equal(typeof response.body.actionBreakdown["user.create"], "number");
   assert.equal(Array.isArray(response.body.recentActions), true);
   assert.equal(response.body.totalUsers >= 2, true);
   assert.equal(response.body.activeDepartments >= 1, true);
+});
+
+test("GET /api/admin/dashboard returns 403 for non-admin user", async () => {
+  const citizenToken = jwt.sign(
+    {
+      id: 999,
+      cid: "citizen1",
+      role: "citizen",
+      email: "citizen@example.com",
+    },
+    process.env.JWT_SECRET,
+  );
+
+  const response = await request(app)
+    .get("/api/admin/dashboard")
+    .set("Authorization", `Bearer ${citizenToken}`);
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /api/admin/dashboard returns 401 with no token", async () => {
+  const response = await request(app).get("/api/admin/dashboard");
+  assert.equal(response.status, 401);
 });

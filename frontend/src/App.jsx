@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import MapPicker from "./components/MapPicker.jsx";
 import { API_BASE_URL, apiRequest } from "./api.js";
@@ -12,6 +12,24 @@ const STATUS_CLASS = {
   resolved: "status status-resolved",
 };
 
+const ROLE_NAV_ITEMS = {
+  citizen: [
+    { id: "report", label: "Report Issue" },
+    { id: "reports", label: "My Reports" },
+  ],
+  admin: [
+    { id: "admin-dashboard", label: "Dashboard" },
+    { id: "admin-issues", label: "All Issues" },
+    { id: "admin-assign", label: "Assign Department" },
+    { id: "admin-users", label: "User Management" },
+    { id: "admin-audit", label: "Audit Logs" },
+  ],
+  staff: [
+    { id: "staff-issues", label: "Assigned Issues" },
+    { id: "staff-update", label: "Update Status" },
+  ],
+};
+
 const readStoredJson = (key) => {
   const value = localStorage.getItem(key);
   if (!value) return null;
@@ -23,11 +41,60 @@ const readStoredJson = (key) => {
   }
 };
 
+function AppNavbar({ user, isAuthenticated, onLogout }) {
+  return (
+    <header className="app-navbar">
+      <div className="app-navbar-brand">
+        <p className="app-navbar-kicker">City Portal</p>
+        <h2>Urban Services Management</h2>
+      </div>
+
+      {isAuthenticated ? (
+        <div className="app-navbar-user">
+          <div>
+            <strong>{user?.fullName || user?.full_name || user?.cid}</strong>
+            <span className="role-chip">Role: {user?.role}</span>
+          </div>
+          <button className="ghost-btn" onClick={onLogout}>
+            Logout
+          </button>
+        </div>
+      ) : (
+        <p className="app-navbar-hint">Secure sign-in required to continue</p>
+      )}
+    </header>
+  );
+}
+
+function AppSidebar({ role, activeTab, onTabChange }) {
+  const items = ROLE_NAV_ITEMS[role] || [];
+  if (!items.length) return null;
+
+  return (
+    <aside className="app-sidebar">
+      <h3>Navigation</h3>
+      <nav className="app-sidebar-nav">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            className={activeTab === item.id ? "active" : ""}
+            onClick={() => onTabChange(item.id)}
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [user, setUser] = useState(() => readStoredJson(USER_KEY));
   const [activeTab, setActiveTab] = useState("report");
   const role = user?.role;
+  const isAuthenticated = Boolean(token && user);
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
@@ -36,18 +103,21 @@ function App() {
     setUser(null);
   };
 
-  return (
-    <main className="page-shell">
-      <section className="panel">
-        <header className="hero">
-          <p className="eyebrow">Smart City Management</p>
-          <h1>Role-Based Issue Workflow</h1>
-          <p>
-            Citizens report issues, admins assign departments, and staff update field status.
-          </p>
-        </header>
+  useEffect(() => {
+    if (!role) return;
+    const validTabs = (ROLE_NAV_ITEMS[role] || []).map((item) => item.id);
+    if (!validTabs.length) return;
+    if (!validTabs.includes(activeTab)) {
+      setActiveTab(validTabs[0]);
+    }
+  }, [role, activeTab]);
 
-        {!token || !user ? (
+  return (
+    <main className={`page-shell ${!isAuthenticated ? "auth-page" : ""}`.trim()}>
+      <section className={`panel ${!isAuthenticated ? "auth-panel" : ""}`.trim()}>
+        <AppNavbar user={user} isAuthenticated={isAuthenticated} onLogout={logout} />
+
+        {!isAuthenticated ? (
           <AuthCard
             onAuthenticated={({ nextToken, nextUser }) => {
               setToken(nextToken);
@@ -56,45 +126,39 @@ function App() {
           />
         ) : (
           <>
-            <div className="session-strip">
-              <div>
-                <strong>{user.fullName || user.full_name || user.cid}</strong>
-                <span className="role-chip">Role: {user.role}</span>
-              </div>
-              <button className="ghost-btn" onClick={logout}>
-                Logout
-              </button>
+            <div className="app-layout">
+              <AppSidebar role={role} activeTab={activeTab} onTabChange={setActiveTab} />
+
+              <section className="app-content">
+                {role === "citizen" ? (
+                  <CitizenWorkspace
+                    token={token}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                  />
+                ) : null}
+
+                {role === "admin" ? (
+                  <AdminWorkspace
+                    token={token}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                  />
+                ) : null}
+
+                {role === "staff" ? (
+                  <StaffWorkspace
+                    token={token}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                  />
+                ) : null}
+
+                {!role || !["citizen", "admin", "staff"].includes(role) ? (
+                  <p className="info-box">Unknown role: {String(role || "none")}</p>
+                ) : null}
+              </section>
             </div>
-
-            {role === "citizen" ? (
-              <CitizenWorkspace
-                token={token}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-              />
-            ) : null}
-
-            {role === "admin" ? (
-              <AdminWorkspace
-                token={token}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-              />
-            ) : null}
-
-            {role === "staff" ? (
-              <StaffWorkspace
-                token={token}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-              />
-            ) : null}
-
-            {!role || !["citizen", "admin", "staff"].includes(role) ? (
-              <p className="info-box">Unknown role: {String(role || "none")}</p>
-            ) : (
-              <></>
-            )}
           </>
         )}
       </section>
@@ -147,64 +211,100 @@ function AuthCard({ onAuthenticated }) {
 
   return (
     <section className="auth-card">
-      <div className="mode-switch">
-        <button
-          className={mode === "login" ? "active" : ""}
-          onClick={() => setMode("login")}
-          type="button"
-        >
-          Login
-        </button>
-        <button
-          className={mode === "register" ? "active" : ""}
-          onClick={() => setMode("register")}
-          type="button"
-        >
-          Register
-        </button>
-      </div>
+      <div className="auth-form-pane">
+        <p className="auth-kicker">Citizen Access Portal</p>
+        <h2>{mode === "login" ? "Sign In to Continue" : "Create Your Account"}</h2>
+        <p className="auth-subcopy">
+          Access services, track city issues, and receive verified updates from municipal teams.
+        </p>
 
-      <form className="form-grid" onSubmit={handleSubmit}>
-        {mode === "register" ? (
+        <div className="mode-switch">
+          <button
+            className={mode === "login" ? "active" : ""}
+            onClick={() => setMode("login")}
+            type="button"
+          >
+            Login
+          </button>
+          <button
+            className={mode === "register" ? "active" : ""}
+            onClick={() => setMode("register")}
+            type="button"
+          >
+            Register
+          </button>
+        </div>
+
+        <form className="form-grid auth-form" onSubmit={handleSubmit}>
+          {mode === "register" ? (
+            <label>
+              Full Name
+              <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            </label>
+          ) : null}
+
           <label>
-            Full Name
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            CID
+            <input value={cid} onChange={(e) => setCid(e.target.value)} required />
           </label>
-        ) : null}
 
-        <label>
-          CID
-          <input value={cid} onChange={(e) => setCid(e.target.value)} required />
-        </label>
+          {mode === "register" ? (
+            <label>
+              Email
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                required
+              />
+            </label>
+          ) : null}
 
-        {mode === "register" ? (
           <label>
-            Email
+            Password
             <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
               required
             />
           </label>
-        ) : null}
 
-        <label>
-          Password
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            required
-          />
-        </label>
+          <button className="solid-btn auth-submit" disabled={loading}>
+            {loading ? "Please wait..." : submitLabel}
+          </button>
+        </form>
 
-        <button className="solid-btn" disabled={loading}>
-          {loading ? "Please wait..." : submitLabel}
-        </button>
-      </form>
+        {message ? <p className="feedback auth-feedback">{message}</p> : null}
+      </div>
 
-      {message ? <p className="feedback">{message}</p> : null}
+      <aside className="auth-side-pane">
+        <div className="auth-side-overlay" />
+        <div className="auth-side-content">
+          <h3>Digital Public Services</h3>
+          <p>
+            A secure and transparent city platform built to connect residents with responsive
+            government services.
+          </p>
+
+          <ul className="auth-feature-list">
+            <li>Real-time issue tracking across departments</li>
+            <li>Role-based accountability with audit trails</li>
+            <li>Clear communication from report to resolution</li>
+          </ul>
+
+          <div className="auth-metric-row">
+            <article>
+              <strong>24/7</strong>
+              <span>Service Access</span>
+            </article>
+            <article>
+              <strong>100%</strong>
+              <span>Traceable Updates</span>
+            </article>
+          </div>
+        </div>
+      </aside>
     </section>
   );
 }
@@ -214,23 +314,6 @@ function CitizenWorkspace({ token, activeTab, onTabChange }) {
 
   return (
     <section className="workspace">
-      <div className="tab-row">
-        <button
-          className={activeTab === "report" ? "active" : ""}
-          onClick={() => onTabChange("report")}
-          type="button"
-        >
-          Report Issue
-        </button>
-        <button
-          className={activeTab === "reports" ? "active" : ""}
-          onClick={() => onTabChange("reports")}
-          type="button"
-        >
-          My Reports
-        </button>
-      </div>
-
       {activeTab === "report" ? (
         <ReportIssueForm
           token={token}
@@ -447,44 +530,6 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
 
   return (
     <section className="workspace">
-      <div className="tab-row">
-        <button
-          className={activeTab === "admin-dashboard" ? "active" : ""}
-          onClick={() => onTabChange("admin-dashboard")}
-          type="button"
-        >
-          Dashboard
-        </button>
-        <button
-          className={activeTab === "admin-issues" ? "active" : ""}
-          onClick={() => onTabChange("admin-issues")}
-          type="button"
-        >
-          All Issues
-        </button>
-        <button
-          className={activeTab === "admin-assign" ? "active" : ""}
-          onClick={() => onTabChange("admin-assign")}
-          type="button"
-        >
-          Assign Department
-        </button>
-        <button
-          className={activeTab === "admin-users" ? "active" : ""}
-          onClick={() => onTabChange("admin-users")}
-          type="button"
-        >
-          User Management
-        </button>
-        <button
-          className={activeTab === "admin-audit" ? "active" : ""}
-          onClick={() => onTabChange("admin-audit")}
-          type="button"
-        >
-          Audit Logs
-        </button>
-      </div>
-
       {activeTab === "admin-users" ? (
         <AdminUserManagement token={token} />
       ) : activeTab === "admin-audit" ? (
@@ -508,10 +553,18 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
 
 function AdminDashboard({ token }) {
   const [stats, setStats] = useState({
+    range: "7d",
     totalUsers: 0,
     activeDepartments: 0,
+    actionsLast24h: 0,
+    actionBreakdown: {
+      "user.create": 0,
+      "user.role.update": 0,
+      "user.department.update": 0,
+    },
     recentActions: [],
   });
+  const [range, setRange] = useState("7d");
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
@@ -523,13 +576,22 @@ function AdminDashboard({ token }) {
       setFeedback("");
       try {
         const result = await apiRequest({
-          path: "/admin/dashboard",
+          path: `/admin/dashboard?range=${encodeURIComponent(range)}`,
           token,
         });
         if (mounted) {
           setStats({
+            range: result.range || range,
             totalUsers: Number(result.totalUsers || 0),
             activeDepartments: Number(result.activeDepartments || 0),
+            actionsLast24h: Number(result.actionsLast24h || 0),
+            actionBreakdown: {
+              "user.create": Number(result.actionBreakdown?.["user.create"] || 0),
+              "user.role.update": Number(result.actionBreakdown?.["user.role.update"] || 0),
+              "user.department.update": Number(
+                result.actionBreakdown?.["user.department.update"] || 0,
+              ),
+            },
             recentActions: result.recentActions || [],
           });
         }
@@ -548,12 +610,20 @@ function AdminDashboard({ token }) {
     return () => {
       mounted = false;
     };
-  }, [token]);
+  }, [token, range]);
 
   return (
     <section className="admin-grid">
       <section className="card-box full-width">
         <h3>Admin Dashboard</h3>
+        <label className="dashboard-range">
+          Date Range
+          <select value={range} onChange={(event) => setRange(event.target.value)}>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </select>
+        </label>
         {loading ? <p className="info-box">Loading dashboard...</p> : null}
         {feedback ? <p className="feedback">{feedback}</p> : null}
 
@@ -568,8 +638,20 @@ function AdminDashboard({ token }) {
               <p className="stat-value">{stats.activeDepartments}</p>
             </article>
             <article className="stat-card">
-              <p className="stat-label">Recent Admin Actions</p>
-              <p className="stat-value">{stats.recentActions.length}</p>
+              <p className="stat-label">Actions Last 24 Hours</p>
+              <p className="stat-value">{stats.actionsLast24h}</p>
+            </article>
+            <article className="stat-card">
+              <p className="stat-label">user.create ({stats.range})</p>
+              <p className="stat-value">{stats.actionBreakdown["user.create"]}</p>
+            </article>
+            <article className="stat-card">
+              <p className="stat-label">user.role.update ({stats.range})</p>
+              <p className="stat-value">{stats.actionBreakdown["user.role.update"]}</p>
+            </article>
+            <article className="stat-card">
+              <p className="stat-label">user.department.update ({stats.range})</p>
+              <p className="stat-value">{stats.actionBreakdown["user.department.update"]}</p>
             </article>
           </div>
         ) : null}
@@ -615,23 +697,6 @@ function StaffWorkspace({ token, activeTab, onTabChange }) {
 
   return (
     <section className="workspace">
-      <div className="tab-row">
-        <button
-          className={activeTab === "staff-issues" ? "active" : ""}
-          onClick={() => onTabChange("staff-issues")}
-          type="button"
-        >
-          Assigned Issues
-        </button>
-        <button
-          className={activeTab === "staff-update" ? "active" : ""}
-          onClick={() => onTabChange("staff-update")}
-          type="button"
-        >
-          Update Status
-        </button>
-      </div>
-
       {activeTab === "staff-update" ? (
         <UpdateStatusForm
           token={token}
@@ -1176,8 +1241,10 @@ function AdminAuditLogs({ token }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
+  const [expandedRowId, setExpandedRowId] = useState(null);
 
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [action, setAction] = useState("");
   const [actorCid, setActorCid] = useState("");
   const [from, setFrom] = useState("");
@@ -1187,7 +1254,7 @@ function AdminAuditLogs({ token }) {
 
   const buildAuditParams = useCallback(
     ({
-      nextQ = q,
+      nextQ = debouncedQ,
       nextAction = action,
       nextActorCid = actorCid,
       nextFrom = from,
@@ -1219,13 +1286,13 @@ function AdminAuditLogs({ token }) {
       }
       return params;
     },
-    [q, action, actorCid, from, to, limit, offset],
+    [debouncedQ, action, actorCid, from, to, limit, offset],
   );
 
   const loadLogs = useCallback(
     async ({
       resetOffset = false,
-      nextQ = q,
+      nextQ = debouncedQ,
       nextAction = action,
       nextActorCid = actorCid,
       nextFrom = from,
@@ -1264,12 +1331,32 @@ function AdminAuditLogs({ token }) {
         setLoading(false);
       }
     },
-    [q, action, actorCid, from, to, limit, offset, token, buildAuditParams],
+    [debouncedQ, action, actorCid, from, to, limit, offset, token, buildAuditParams],
   );
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedQ(q);
+    }, 400);
+
+    return () => clearTimeout(timeoutId);
+  }, [q]);
 
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
+
+  useEffect(() => {
+    if (q === debouncedQ) {
+      return;
+    }
+
+    loadLogs({
+      resetOffset: true,
+      nextQ: debouncedQ,
+      nextOffset: 0,
+    });
+  }, [debouncedQ]);
 
   const canGoPrev = offset > 0;
   const canGoNext = offset + logs.length < total;
@@ -1387,6 +1474,7 @@ function AdminAuditLogs({ token }) {
             type="button"
             onClick={async () => {
               setQ("");
+              setDebouncedQ("");
               setAction("");
               setActorCid("");
               setFrom("");
@@ -1405,7 +1493,7 @@ function AdminAuditLogs({ token }) {
               });
             }}
           >
-            Reset
+            Clear All Filters
           </button>
           <button className="ghost-btn" type="button" onClick={exportCsv}>
             Export CSV
@@ -1431,33 +1519,53 @@ function AdminAuditLogs({ token }) {
                       <th>Action</th>
                       <th>Actor</th>
                       <th>Target User</th>
-                      <th>Old Values</th>
-                      <th>New Values</th>
+                      <th>Changes</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {logs.map((entry) => (
-                      <tr key={entry.id}>
-                        <td>{new Date(entry.created_at).toLocaleString()}</td>
-                        <td>{entry.action}</td>
-                        <td>{entry.actor_cid || `#${entry.actor_user_id || "-"}`}</td>
-                        <td>{entry.target_cid || `#${entry.target_user_id || "-"}`}</td>
-                        <td>
-                          <code className="json-cell">
-                            {entry.old_values
-                              ? JSON.stringify(entry.old_values)
-                              : "-"}
-                          </code>
-                        </td>
-                        <td>
-                          <code className="json-cell">
-                            {entry.new_values
-                              ? JSON.stringify(entry.new_values)
-                              : "-"}
-                          </code>
-                        </td>
-                      </tr>
-                    ))}
+                    {logs.map((entry) => {
+                      const isExpanded = expandedRowId === entry.id;
+                      return (
+                        <Fragment key={entry.id}>
+                          <tr
+                            className="audit-row"
+                            onClick={() => {
+                              setExpandedRowId((prev) => (prev === entry.id ? null : entry.id));
+                            }}
+                          >
+                            <td>{new Date(entry.created_at).toLocaleString()}</td>
+                            <td>{entry.action}</td>
+                            <td>{entry.actor_cid || `#${entry.actor_user_id || "-"}`}</td>
+                            <td>{entry.target_cid || `#${entry.target_user_id || "-"}`}</td>
+                            <td>{isExpanded ? "Hide Details" : "Show Details"}</td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="audit-detail-row">
+                              <td colSpan={5}>
+                                <div className="audit-detail-grid">
+                                  <div className="json-panel">
+                                    <h4>Old Values</h4>
+                                    <pre className="json-cell json-block">
+                                      {entry.old_values
+                                        ? JSON.stringify(entry.old_values, null, 2)
+                                        : "-"}
+                                    </pre>
+                                  </div>
+                                  <div className="json-panel">
+                                    <h4>New Values</h4>
+                                    <pre className="json-cell json-block">
+                                      {entry.new_values
+                                        ? JSON.stringify(entry.new_values, null, 2)
+                                        : "-"}
+                                    </pre>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
