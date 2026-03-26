@@ -162,9 +162,30 @@ export const getMyIssues = async (req, res) => {
 
 export const getAllIssues = async (req, res) => {
   const { status, category, department } = req.query;
+  const requesterRole = String(req.user?.role || "").toLowerCase();
+  const requesterId = Number(req.user?.id);
 
   const conditions = [];
   const values = [];
+
+  if (requesterRole === "staff") {
+    if (!Number.isInteger(requesterId) || requesterId <= 0) {
+      return res.status(401).json({ message: "Invalid auth token payload." });
+    }
+
+    const userResult = await pool.query(
+      "SELECT department_id FROM users WHERE id = $1 LIMIT 1",
+      [requesterId],
+    );
+
+    const departmentId = userResult.rows[0]?.department_id;
+    if (!departmentId) {
+      return res.json({ issues: [] });
+    }
+
+    values.push(Number(departmentId));
+    conditions.push(`i.assigned_department = $${values.length}`);
+  }
 
   if (status) {
     if (!ALLOWED_STATUSES.has(String(status))) {
@@ -208,6 +229,22 @@ export const getAllIssues = async (req, res) => {
 
     const result = await pool.query(query, values);
     return res.json({ issues: result.rows });
+  } catch (error) {
+    return handleDbError(res, error);
+  }
+};
+
+export const getDepartments = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, name, description
+      FROM departments
+      ORDER BY name ASC;
+      `,
+    );
+
+    return res.json({ departments: result.rows });
   } catch (error) {
     return handleDbError(res, error);
   }

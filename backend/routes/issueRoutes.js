@@ -5,6 +5,7 @@ import { validateRequest } from "../middlewares/validateRequest.js";
 import {
   assignIssueToDepartment,
   createIssue,
+  getDepartments,
   getAllIssues,
   getMyIssues,
   updateIssueStatus,
@@ -35,6 +36,13 @@ router.post(
   uploadIssueImage,
 );
 
+router.get(
+  "/departments",
+  verifyToken,
+  authorizeRoles("admin", "staff"),
+  getDepartments,
+);
+
 router.post(
   "/",
   verifyToken,
@@ -46,7 +54,7 @@ router.get("/my", verifyToken, authorizeRoles("citizen"), getMyIssues);
 router.get(
   "/",
   verifyToken,
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "staff"),
   validateRequest({ querySchema: listIssuesQuerySchema }),
   getAllIssues,
 );
