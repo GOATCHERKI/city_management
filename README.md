@@ -1,10 +1,20 @@
 # Smart City Management Platform
 
+<p align="left">
+  <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?logo=react&logoColor=white" alt="React 19" />
+  <img src="https://img.shields.io/badge/Backend-Node.js%20%2B%20Express-339933?logo=node.js&logoColor=white" alt="Node + Express" />
+  <img src="https://img.shields.io/badge/Database-PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Maps-Leaflet-199900?logo=leaflet&logoColor=white" alt="Leaflet" />
+  <img src="https://img.shields.io/badge/Charts-Recharts-FF4B4B" alt="Recharts" />
+  <img src="https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions" />
+  <img src="https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel&logoColor=white" alt="Vercel" />
+</p>
+
 A production-minded, full-stack civic incident management platform where citizens report municipal issues, departments coordinate responses, and admins manage operations through analytics and role-based workflows.
 
 This project is built as a monorepo with a React frontend and an Express/PostgreSQL backend, designed for real-world delivery standards: secure uploads, role-based access, auditability, CI checks, and cloud deployment.
 
-## Why This Project Stands Out
+## Highlights
 
 - Role-aware product design for `citizen`, `staff`, and `admin` users.
 - End-to-end incident lifecycle from report -> assignment -> progress updates -> resolution.
@@ -21,6 +31,17 @@ This project is built as a monorepo with a React frontend and an Express/Postgre
 - `.github/workflows/ci.yml` -> CI pipeline
 
 ## Tech Stack
+
+- ⚛️ React 19
+- ⚡ Vite
+- 🗺️ Leaflet
+- 📊 Recharts
+- 🟢 Node.js + Express
+- 🐘 PostgreSQL
+- 🧩 Zod
+- 🔐 JWT
+- 🛡️ Helmet + CORS + Rate Limiting
+- ☁️ Vercel + GitHub Actions
 
 ### Frontend
 
@@ -47,7 +68,7 @@ This project is built as a monorepo with a React frontend and an Express/Postgre
 
 ## Core Features
 
-### Citizen
+### Citizen Portal
 
 - Submit issue reports with:
   - title
@@ -57,14 +78,14 @@ This project is built as a monorepo with a React frontend and an Express/Postgre
   - optional photo evidence
 - View personal submitted issues and status.
 
-### Staff
+### Staff Operations
 
 - Access department-scoped issue queue.
 - Update issue status (`pending`, `in_progress`, `resolved`).
 - Add progress notes and optional progress photos.
 - Open issue detail popup to see citizen photo and full update timeline.
 
-### Admin
+### Admin Control Plane
 
 - Manage users and role assignments.
 - Create/delete departments.
@@ -93,95 +114,15 @@ This project is built as a monorepo with a React frontend and an Express/Postgre
 - npm 10+
 - PostgreSQL (or Neon connection)
 
-## 1) Clone and install
-
-```bash
-git clone <your-repo-url>
-cd city-management
-
-cd backend && npm install
-cd ../frontend && npm install
-```
-
-## 2) Configure environment
-
-### Backend (`backend/.env`)
-
-```env
-PORT=5000
-JWT_SECRET=change_me
-APP_BASE_URL=http://localhost:5000
-DATABASE_URL=postgresql://...
-
-ALLOWED_ORIGINS=http://localhost:5173
-DB_SSL_MODE=auto
-
-MAIN_ADMIN_CID=admin1
-
-IMAGEKIT_PUBLIC_KEY=...
-IMAGEKIT_PRIVATE_KEY=...
-IMAGEKIT_URL_ENDPOINT=...
-```
-
-### Frontend (`frontend/.env`)
-
-```env
-VITE_API_BASE_URL=http://localhost:5000/api
-```
-
-## 3) Run database migration
-
-```bash
-cd backend
-npm run migrate
-```
-
-## 4) Start backend and frontend
-
-```bash
-# Terminal 1
-cd backend
-npm run dev
-
-# Terminal 2
-cd frontend
-npm run dev
-```
-
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:5000`
-
-## Scripts
-
-### Backend
-
-```bash
-npm run dev            # start API in watch mode
-npm run start          # start API
-npm run lint           # syntax lint check
-npm run migrate        # apply schema
-npm run migrate:check  # migration validation
-npm test               # integration tests
-```
-
-### Frontend
-
-```bash
-npm run dev
-npm run lint
-npm run build
-npm run preview
-```
-
 ## API Surface (High-Level)
 
-### Auth
+### Auth APIs
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET|POST /api/auth/verify-email`
 
-### Issues
+### Issue APIs
 
 - `POST /api/issues` (citizen)
 - `POST /api/issues/upload-image` (citizen/staff/admin)
@@ -191,7 +132,7 @@ npm run preview
 - `PATCH /api/issues/:id/assign` (admin)
 - `PATCH /api/issues/:id/status` (staff/admin)
 
-### Admin
+### Admin APIs
 
 - `GET /api/admin/users`
 - `POST /api/admin/users`
