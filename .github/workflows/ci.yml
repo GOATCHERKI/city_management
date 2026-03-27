@@ -26,6 +26,7 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/city_management_test
+      DB_SSL_MODE: disable
       JWT_SECRET: test-secret
       MAIN_ADMIN_CID: admin001
       ALLOWED_ORIGINS: http://localhost:5173

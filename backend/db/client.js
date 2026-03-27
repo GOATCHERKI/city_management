@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import pg from "pg";
+import { resolveDbSslConfig } from "./sslConfig.js";
 
 dotenv.config();
 
@@ -11,7 +12,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: resolveDbSslConfig(process.env.DATABASE_URL),
 });
 
 export default pool;

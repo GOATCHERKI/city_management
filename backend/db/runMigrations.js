@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import pg from "pg";
+import { resolveDbSslConfig } from "./sslConfig.js";
 
 dotenv.config();
 
@@ -14,7 +15,7 @@ const run = async () => {
 
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: resolveDbSslConfig(process.env.DATABASE_URL),
   });
 
   const schemaPath = path.resolve("db", "schema.sql");
