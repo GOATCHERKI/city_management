@@ -196,8 +196,6 @@ Use temporary demo-only accounts and rotate them regularly.
 | Staff   | `staff2`       | `Password123` |
 | Citizen | `citizen2`     | `Password123` |
 
-> Recommended: Keep these credentials valid only for a limited time window and never reuse production passwords.
-
 ## Project Maturity Snapshot
 
 - Completed role-based end-to-end workflows.
