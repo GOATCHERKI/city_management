@@ -186,6 +186,18 @@ If you share demo access publicly:
 - rotate passwords periodically
 - include a note that demo data resets
 
+### Demo Credentials
+
+Use temporary demo-only accounts and rotate them regularly.
+
+| Role    | Username / CID | Password      |
+| ------- | -------------- | ------------- |
+| Admin   | `admin2`       | `Password123` |
+| Staff   | `staff2`       | `Password123` |
+| Citizen | `citizen2`     | `Password123` |
+
+> Recommended: Keep these credentials valid only for a limited time window and never reuse production passwords.
+
 ## Project Maturity Snapshot
 
 - Completed role-based end-to-end workflows.
@@ -202,4 +214,4 @@ If you share demo access publicly:
 
 ---
 
-Built to demonstrate strong full-stack engineering fundamentals: product thinking, API design, data modeling, security controls, operational discipline, and responsive UX delivery.
+Made with ❤️ by Mohamed Zakaria Cherki
