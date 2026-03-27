@@ -599,7 +599,7 @@ function AdminDashboard({ token }) {
         ) : null}
       </section>
 
-      <section className="card-box full-width">
+      <section className="card-box full-width admin-charts-section">
         <h3>Issue Charts</h3>
         {!loading && !feedback && !issues.length ? (
           <p className="info-box">No issues available for charts yet.</p>

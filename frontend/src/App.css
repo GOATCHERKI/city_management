@@ -96,6 +96,7 @@ body {
     font-family: "Source Sans 3", "Segoe UI", Tahoma, sans-serif;
     color: var(--ink);
     background: var(--bg);
+    overflow-x: hidden;
 }
 
 h1,
@@ -228,7 +229,7 @@ h4 {
 .app-topbar {
     position: sticky;
     top: 0;
-    z-index: 50;
+    z-index: 1100;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -307,6 +308,23 @@ h4 {
     justify-content: space-between;
     margin-bottom: 12px;
     gap: 8px;
+}
+
+.app-sidenav__toggle {
+    display: none;
+    border: 1px solid #d6e1ef;
+    border-radius: 999px;
+    background: #f5f9ff;
+    color: #1e3f67;
+    padding: 5px 10px;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.app-sidenav__toggle:hover {
+    background: #eaf2ff;
 }
 
 .app-sidenav__label {
@@ -811,6 +829,7 @@ h4 {
 .app-content {
     width: 100%;
     max-width: 1240px;
+    min-width: 0;
 }
 
 .content-header {
@@ -845,6 +864,7 @@ h4 {
 .auth-card,
 .workspace {
     margin-top: 20px;
+    min-width: 0;
 }
 
 .auth-card {
@@ -1295,11 +1315,16 @@ h4 {
 .report-list {
     display: grid;
     gap: 12px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .all-issues-layout {
     display: grid;
     gap: 12px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .all-issues-map-card {
@@ -1342,6 +1367,9 @@ h4 {
     background: var(--panel-soft);
     box-shadow: none;
     transition: border-color 0.15s ease, background 0.15s ease;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 
 .report-card--clickable {
@@ -1400,6 +1428,8 @@ h4 {
     margin-top: 8px;
     color: var(--accent);
     font-weight: 700;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .issue-photo {
@@ -1491,6 +1521,60 @@ h4 {
     font-size: 1.04rem;
 }
 
+@media (max-width: 900px) {
+    .all-issues-map {
+        height: 300px;
+    }
+
+    .department-header {
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+
+    .report-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .staff-list li {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .issue-modal-card {
+        width: min(760px, 100%);
+    }
+}
+
+@media (max-width: 640px) {
+    .all-issues-map {
+        height: 240px;
+    }
+
+    .issue-modal-overlay {
+        padding: 10px;
+    }
+
+    .issue-modal-card {
+        max-height: calc(100vh - 20px);
+        padding: 12px;
+    }
+
+    .issue-modal-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .issue-photo {
+        max-height: 180px;
+    }
+
+    .table-wrap table {
+        min-width: 640px;
+    }
+}
+
 .admin-grid {
     display: grid;
     gap: 12px;
@@ -1511,9 +1595,13 @@ h4 {
 
 .table-wrap {
     overflow-x: auto;
+    overflow-y: hidden;
     border: 1px solid var(--line);
     border-radius: 10px;
     background: #ffffff;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 table {
@@ -1710,15 +1798,15 @@ tbody tr:hover:not(.audit-detail-row) {
         grid-template-columns: 1fr;
     }
 
-    .app-layout {
+    .app-body {
         grid-template-columns: 1fr;
     }
 
-    .app-sidebar {
+    .app-sidenav {
         position: static;
     }
 
-    .app-sidebar-nav {
+    .app-sidenav__nav {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -1768,7 +1856,7 @@ tbody tr:hover:not(.audit-detail-row) {
         justify-content: space-between;
     }
 
-    .app-sidebar-nav {
+    .app-sidenav__nav {
         grid-template-columns: 1fr;
     }
 
@@ -2073,5 +2161,274 @@ tbody tr:hover:not(.audit-detail-row) {
 
     .all-issues-map {
         height: 300px;
+    }
+}
+
+/* Global responsive pass for all pages */
+@media (max-width: 1200px) {
+    .app-content {
+        max-width: 100%;
+    }
+
+    .chart-surface {
+        min-height: 230px;
+    }
+
+    .auth-card {
+        width: 100%;
+    }
+}
+
+@media (max-width: 992px) {
+    .app-body {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 12px;
+    }
+
+    .app-sidenav {
+        position: static;
+        top: auto;
+        width: 100%;
+    }
+
+    .app-sidenav__nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .app-sidenav--admin .app-sidenav__toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .app-sidenav__nav--collapsed {
+        display: none;
+    }
+
+    .app-sidenav--admin .app-sidenav__head {
+        margin-bottom: 0;
+    }
+
+    .app-sidenav--admin .app-sidenav__nav:not(.app-sidenav__nav--collapsed) {
+        margin-top: 10px;
+    }
+
+    .dashboard-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .chart-grid,
+    .admin-grid,
+    .audit-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-card,
+    .auth-shell .auth-card,
+    .auth-minimal-card {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-card__side,
+    .auth-shell .auth-card .auth-card__side {
+        border-left: none;
+        border-top: 1px solid var(--line);
+        border-radius: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .app-topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .app-topbar__right {
+        width: 100%;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .app-user {
+        text-align: left;
+    }
+
+    .workspace,
+    .app-content .workspace,
+    .card-box,
+    .chart-card {
+        padding: 10px;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .report-head,
+    .issue-modal-head,
+    .department-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .staff-list li,
+    .audit-actions,
+    .audit-pagination {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .table-wrap {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table-wrap table {
+        min-width: 620px;
+    }
+
+    .all-issues-map {
+        height: 260px;
+    }
+
+    .issue-modal-overlay {
+        padding: 10px;
+    }
+
+    .issue-modal-card {
+        width: 100%;
+        max-height: calc(100vh - 20px);
+        padding: 12px;
+    }
+
+    .admin-charts-section {
+        display: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .page-head__title {
+        font-size: 1.1rem;
+    }
+
+    .page-head__meta,
+    .meta-row,
+    .stat-label,
+    .feedback,
+    .info-box {
+        font-size: 0.84rem;
+    }
+
+    .dashboard-stats,
+    .auth-side__metrics,
+    .auth-minimal-side__stats,
+    .app-sidenav__nav {
+        grid-template-columns: 1fr;
+        grid-auto-flow: row;
+        overflow-x: visible;
+    }
+
+    .issue-photo {
+        max-height: 170px;
+    }
+
+    .all-issues-map {
+        height: 220px;
+    }
+
+    .sidenav-item {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 420px) {
+
+    .app-topbar,
+    .app-content .workspace,
+    .card-box,
+    .issue-modal-card,
+    .report-card {
+        padding: 8px;
+    }
+
+    .btn,
+    .solid-btn,
+    .ghost-btn,
+    .danger-btn {
+        width: 100%;
+    }
+
+    .status {
+        font-size: 0.72rem;
+    }
+}
+
+/* Hard overflow containment for small devices */
+@media (max-width: 992px) {
+
+    html,
+    body,
+    .page-shell,
+    .panel,
+    .app-body,
+    .app-content,
+    .workspace,
+    .app-content .workspace {
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .app-body {
+        overflow-x: hidden;
+        padding: 10px;
+    }
+
+    .app-sidenav,
+    .card-box,
+    .report-card,
+    .all-issues-map-card {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .report-list,
+    .all-issues-layout,
+    .departments-list,
+    .issue-updates-list {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .table-wrap {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    .table-wrap table {
+        min-width: 720px;
+    }
+}
+
+@media (max-width: 560px) {
+    .app-body {
+        padding: 8px;
+    }
+
+    .app-content .workspace,
+    .card-box,
+    .report-card,
+    .all-issues-map-card {
+        border-radius: 10px;
     }
 }
