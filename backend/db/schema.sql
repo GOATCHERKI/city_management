@@ -86,6 +86,7 @@ IF NOT EXISTS issue_updates
 DELETE CASCADE,
   message TEXT
 NOT NULL,
+  photo_url TEXT,
   created_by BIGINT NOT NULL REFERENCES users
 (id) ON
 DELETE CASCADE,
@@ -93,6 +94,9 @@ DELETE CASCADE,
 NOT NULL DEFAULT NOW
 ()
 );
+
+ALTER TABLE issue_updates
+ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
 CREATE TABLE
 IF NOT EXISTS admin_audit_logs

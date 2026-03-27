@@ -24,7 +24,7 @@ const router = express.Router();
 router.post(
   "/upload-image",
   verifyToken,
-  authorizeRoles("citizen"),
+  authorizeRoles("citizen", "staff", "admin"),
   (req, res, next) => {
     uploadIssuePhoto(req, res, (error) => {
       if (error) {

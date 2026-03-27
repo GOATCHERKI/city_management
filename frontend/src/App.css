@@ -1,22 +1,71 @@
 @import url("https://fonts.googleapis.com/css2?family=Merriweather:wght@700;800&family=Source+Sans+3:wght@400;600;700&display=swap");
 
-:root {
-    --bg: #eef2f7;
-    --bg-accent: #dce6f4;
-    --panel: #ffffff;
-    --panel-soft: #f8fbff;
-    --ink: #16243b;
-    --muted: #4f617d;
-    --accent: #0c3b74;
-    --accent-ink: #eff5ff;
-    --line: #d2ddeb;
-    --line-strong: #b7c7dc;
-    --ok-bg: #e5f3e9;
-    --ok-ink: #1e6a3a;
-    --warn-bg: #fff3dd;
-    --warn-ink: #7a5610;
-    --info-bg: #e4eefc;
-    --info-ink: #205297;
+/* Departments & Staff List */
+.departments-list {
+    display: grid;
+    gap: 12px;
+}
+
+.department-item {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 12px;
+}
+
+.department-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.department-header h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--ink);
+}
+
+.staff-count {
+    display: inline-block;
+    font-size: 0.82rem;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.department-desc {
+    margin: 0 0 8px;
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+.staff-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.staff-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 8px;
+    background: var(--panel-soft);
+    border-radius: 6px;
+    font-size: 0.88rem;
+}
+
+.staff-list strong {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+.staff-list li strong+text::before {
+    content: "";
 }
 
 :root {
@@ -1118,6 +1167,25 @@ h4 {
     border-color: #d2e3ff;
 }
 
+.danger-btn {
+    border: 1px solid #dc2626;
+    background: #fee2e2;
+    color: #991b1b;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.danger-btn:hover {
+    background: #fecaca;
+}
+
+.danger-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
 .role-chip {
     margin-left: 10px;
     font-size: 0.82rem;
@@ -1475,6 +1543,53 @@ tbody tr:hover:not(.audit-detail-row) {
     gap: 10px;
 }
 
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.chart-grid--admin {
+    margin-bottom: 12px;
+}
+
+.chart-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 12px;
+}
+
+.chart-card--full {
+    background: var(--panel-soft);
+}
+
+.chart-card__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 8px;
+}
+
+.chart-card__head h3,
+.chart-card__head h4 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.chart-card__head p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.chart-surface {
+    width: 100%;
+    min-height: 260px;
+}
+
 .stat-card {
     border: 1px solid var(--line);
     border-radius: 10px;
@@ -1506,6 +1621,10 @@ tbody tr:hover:not(.audit-detail-row) {
 
     .dashboard-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .chart-grid {
+        grid-template-columns: 1fr;
     }
 
     .app-layout {
@@ -1591,6 +1710,11 @@ tbody tr:hover:not(.audit-detail-row) {
 @media (max-width: 560px) {
     .dashboard-stats {
         grid-template-columns: 1fr;
+    }
+
+    .chart-card__head {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .page-shell.auth-page {

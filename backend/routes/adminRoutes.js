@@ -3,6 +3,8 @@ import { authorizeRoles, verifyToken } from "../middlewares/authMiddleware.js";
 import { validateRequest } from "../middlewares/validateRequest.js";
 import {
   listAdminAuditLogs,
+  createDepartment,
+  deleteDepartment,
   createUserByAdmin,
   listUsers,
   updateUserDepartment,
@@ -11,7 +13,9 @@ import {
 } from "../controllers/adminController.js";
 import {
   auditLogQuerySchema,
+  createDepartmentSchema,
   createUserByAdminSchema,
+  departmentIdParamSchema,
   dashboardQuerySchema,
   updateUserDepartmentSchema,
   updateUserRoleSchema,
@@ -32,6 +36,16 @@ router.get(
   "/audit-logs",
   validateRequest({ querySchema: auditLogQuerySchema }),
   listAdminAuditLogs,
+);
+router.post(
+  "/departments",
+  validateRequest({ bodySchema: createDepartmentSchema }),
+  createDepartment,
+);
+router.delete(
+  "/departments/:id",
+  validateRequest({ paramsSchema: departmentIdParamSchema }),
+  deleteDepartment,
 );
 router.post(
   "/users",

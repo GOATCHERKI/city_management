@@ -51,4 +51,10 @@ export const assignIssueSchema = z.object({
 export const updateIssueStatusSchema = z.object({
   status: statusEnum,
   message: z.string().trim().max(2000).optional(),
+  photo_url: z
+    .string()
+    .trim()
+    .url("photo_url must be a valid URL")
+    .optional()
+    .or(z.literal("")),
 });

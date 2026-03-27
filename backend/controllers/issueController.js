@@ -72,9 +72,13 @@ export const uploadIssueImage = async (req, res) => {
   }
 
   try {
-    const imageFile = new File([req.file.buffer], req.file.originalname || "issue-image", {
-      type: req.file.mimetype || "application/octet-stream",
-    });
+    const imageFile = new File(
+      [req.file.buffer],
+      req.file.originalname || "issue-image",
+      {
+        type: req.file.mimetype || "application/octet-stream",
+      },
+    );
 
     const result = await imagekit.files.upload({
       file: imageFile,
@@ -315,6 +319,9 @@ export const updateIssueStatus = async (req, res) => {
   const issueId = Number(req.params.id);
   const status = String(req.body.status || "").trim();
   const message = req.body.message ? String(req.body.message).trim() : null;
+  const photoUrl = req.body.photo_url
+    ? String(req.body.photo_url).trim()
+    : null;
   const actorId = await getAuthUserId(req);
 
   if (!actorId) {
@@ -354,10 +361,10 @@ export const updateIssueStatus = async (req, res) => {
     const updateMessage = message || `Status changed to ${status}`;
     await client.query(
       `
-      INSERT INTO issue_updates (issue_id, message, created_by)
-      VALUES ($1, $2, $3);
+      INSERT INTO issue_updates (issue_id, message, created_by, photo_url)
+      VALUES ($1, $2, $3, $4);
       `,
-      [issueId, updateMessage, actorId],
+      [issueId, updateMessage, actorId, photoUrl],
     );
 
     await client.query("COMMIT");

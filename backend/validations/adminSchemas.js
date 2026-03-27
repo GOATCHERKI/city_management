@@ -29,7 +29,21 @@ export const createUserByAdminSchema = z
     }
   });
 
+export const createDepartmentSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  description: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((value) => (value && value.length ? value : null)),
+});
+
 export const userIdParamSchema = z.object({
+  id: z.coerce.number().int().positive(),
+});
+
+export const departmentIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
@@ -68,7 +82,13 @@ export const auditLogQuerySchema = z
       .optional(),
     format: z.enum(["json", "csv"]).optional(),
     action: z
-      .enum(["user.create", "user.role.update", "user.department.update"])
+      .enum([
+        "user.create",
+        "user.role.update",
+        "user.department.update",
+        "department.create",
+        "department.delete",
+      ])
       .optional(),
   })
   .superRefine((value, context) => {

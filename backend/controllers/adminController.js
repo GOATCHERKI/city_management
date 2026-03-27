@@ -124,6 +124,100 @@ export const listUsers = async (req, res) => {
   }
 };
 
+export const createDepartment = async (req, res) => {
+  const actor = getAuditContext(req);
+  const name = String(req.body?.name || "").trim();
+  const description = String(req.body?.description || "").trim() || null;
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      INSERT INTO departments (name, description)
+      VALUES ($1, $2)
+      RETURNING id, name, description, created_at;
+      `,
+      [name, description],
+    );
+
+    await insertAuditLog(client, {
+      actor,
+      targetUserId: null,
+      action: "department.create",
+      oldValues: null,
+      newValues: {
+        departmentId: result.rows[0].id,
+        name: result.rows[0].name,
+      },
+    });
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      message: "Department created successfully.",
+      department: result.rows[0],
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    if (error?.code === "23505") {
+      return res.status(409).json({ message: "Department name already exists." });
+    }
+    return handleAdminDbError(res, error);
+  } finally {
+    client.release();
+  }
+};
+
+export const deleteDepartment = async (req, res) => {
+  const actor = getAuditContext(req);
+  const departmentId = Number(req.validated?.params?.id ?? req.params.id);
+
+  if (!Number.isInteger(departmentId) || departmentId <= 0) {
+    return res.status(400).json({ message: "Invalid department id." });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      "SELECT id, name, description FROM departments WHERE id = $1 LIMIT 1",
+      [departmentId],
+    );
+
+    if (!existing.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Department not found." });
+    }
+
+    await client.query("DELETE FROM departments WHERE id = $1", [departmentId]);
+
+    await insertAuditLog(client, {
+      actor,
+      targetUserId: null,
+      action: "department.delete",
+      oldValues: {
+        departmentId: existing.rows[0].id,
+        name: existing.rows[0].name,
+      },
+      newValues: null,
+    });
+
+    await client.query("COMMIT");
+
+    return res.json({ message: "Department deleted successfully." });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return handleAdminDbError(res, error);
+  } finally {
+    client.release();
+  }
+};
+
 export const createUserByAdmin = async (req, res) => {
   const input = normalizeUserInput(req.body || {});
   const actor = getAuditContext(req);

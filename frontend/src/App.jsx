@@ -1,6 +1,19 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import "./App.css";
 import MapPicker from "./components/MapPicker.jsx";
 import { API_BASE_URL, apiRequest } from "./api.js";
@@ -16,6 +29,23 @@ const STATUS_CLASS = {
 };
 
 const ISTANBUL_CENTER = [41.0082, 28.9784];
+
+const STATUS_CHART_COLORS = ["#f59e0b", "#2563eb", "#16a34a", "#64748b"];
+const TYPE_CHART_COLORS = ["#c2410c", "#0f766e", "#7c3aed", "#d946ef", "#0ea5e9", "#475569"];
+const TREND_CHART_COLOR = "#dc2626";
+
+const STATUS_LABELS = {
+  pending: "Pending",
+  in_progress: "In Progress",
+  resolved: "Resolved",
+};
+
+const CATEGORY_LABELS = {
+  streetlight: "Streetlight",
+  pothole: "Pothole",
+  garbage: "Garbage",
+  water_leak: "Water Leak",
+};
 
 const issueMarkerIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -138,7 +168,7 @@ function CitizenWorkspace({ token, activeTab, onTabChange }) {
 function ReportIssueForm({ token, onCreated }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("streetlight");
+  const [category, setCategory] = useState("");
   const [location, setLocation] = useState({ lat: null, lng: null });
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -189,7 +219,7 @@ function ReportIssueForm({ token, onCreated }) {
       setFeedback("Issue submitted successfully.");
       setTitle("");
       setDescription("");
-      setCategory("streetlight");
+      setCategory("");
       setLocation({ lat: null, lng: null });
       setFile(null);
       onCreated();
@@ -209,12 +239,12 @@ function ReportIssueForm({ token, onCreated }) {
 
       <label>
         Category
-        <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="streetlight">Streetlight</option>
-          <option value="pothole">Pothole</option>
-          <option value="garbage">Garbage</option>
-          <option value="water_leak">Water Leak</option>
-        </select>
+        <input
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          placeholder="e.g. streetlight, pothole, drainage"
+          required
+        />
       </label>
 
       <label className="full-width">
@@ -416,48 +446,20 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
 }
 
 function AdminDashboard({ token }) {
-  const [stats, setStats] = useState({
-    range: "7d",
-    totalUsers: 0,
-    activeDepartments: 0,
-    actionsLast24h: 0,
-    actionBreakdown: {
-      "user.create": 0,
-      "user.role.update": 0,
-      "user.department.update": 0,
-    },
-    recentActions: [],
-  });
-  const [range, setRange] = useState("7d");
+  const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
     let mounted = true;
 
-    const loadStats = async () => {
+    const loadIssues = async () => {
       setLoading(true);
       setFeedback("");
       try {
-        const result = await apiRequest({
-          path: `/admin/dashboard?range=${encodeURIComponent(range)}`,
-          token,
-        });
+        const result = await apiRequest({ path: "/issues", token });
         if (mounted) {
-          setStats({
-            range: result.range || range,
-            totalUsers: Number(result.totalUsers || 0),
-            activeDepartments: Number(result.activeDepartments || 0),
-            actionsLast24h: Number(result.actionsLast24h || 0),
-            actionBreakdown: {
-              "user.create": Number(result.actionBreakdown?.["user.create"] || 0),
-              "user.role.update": Number(result.actionBreakdown?.["user.role.update"] || 0),
-              "user.department.update": Number(
-                result.actionBreakdown?.["user.department.update"] || 0,
-              ),
-            },
-            recentActions: result.recentActions || [],
-          });
+          setIssues(result.issues || []);
         }
       } catch (error) {
         if (mounted) {
@@ -470,81 +472,253 @@ function AdminDashboard({ token }) {
       }
     };
 
-    loadStats();
+    loadIssues();
     return () => {
       mounted = false;
     };
-  }, [token, range]);
+  }, [token]);
+
+  const statusData = useMemo(() => {
+    const counts = issues.reduce((acc, issue) => {
+      const key = issue.status || "unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return Object.entries(counts).map(([key, value]) => ({
+      key,
+      name: STATUS_LABELS[key] || key,
+      value,
+    }));
+  }, [issues]);
+
+  const typeData = useMemo(() => {
+    const counts = issues.reduce((acc, issue) => {
+      const key = issue.category || "unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return Object.entries(counts)
+      .map(([key, value]) => ({
+        key,
+        name: CATEGORY_LABELS[key] || key,
+        value,
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [issues]);
+
+  const issuesByDay = useMemo(() => {
+    const toLocalDayKey = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
+    const counts = issues.reduce((acc, issue) => {
+      const date = new Date(issue.created_at);
+      if (Number.isNaN(date.getTime())) return acc;
+      const dayKey = toLocalDayKey(date);
+      acc[dayKey] = (acc[dayKey] || 0) + 1;
+      return acc;
+    }, {});
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (6 - index));
+      const dayKey = toLocalDayKey(date);
+      return {
+        day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        value: counts[dayKey] || 0,
+      };
+    });
+  }, [issues]);
+
+  const totals = useMemo(() => {
+    const pending = issues.filter((issue) => issue.status === "pending").length;
+    const inProgress = issues.filter((issue) => issue.status === "in_progress").length;
+    const resolved = issues.filter((issue) => issue.status === "resolved").length;
+    const resolutionRate = issues.length ? Math.round((resolved / issues.length) * 100) : 0;
+
+    return {
+      total: issues.length,
+      pending,
+      inProgress,
+      resolved,
+      resolutionRate,
+      types: typeData.length,
+    };
+  }, [issues, typeData.length]);
+
+  const recentIssues = useMemo(
+    () =>
+      [...issues]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 12),
+    [issues],
+  );
 
   return (
     <section className="admin-grid">
       <section className="card-box full-width">
-        <h3>Admin Dashboard</h3>
-        <label className="dashboard-range">
-          Date Range
-          <select value={range} onChange={(event) => setRange(event.target.value)}>
-            <option value="today">Today</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-          </select>
-        </label>
-        {loading ? <p className="info-box">Loading dashboard...</p> : null}
+        <h3>Issue Dashboard</h3>
+        {loading ? <p className="info-box">Loading issue analytics...</p> : null}
         {feedback ? <p className="feedback">{feedback}</p> : null}
 
         {!loading && !feedback ? (
           <div className="dashboard-stats">
             <article className="stat-card">
-              <p className="stat-label">Total Users</p>
-              <p className="stat-value">{stats.totalUsers}</p>
+              <p className="stat-label">Total Issues</p>
+              <p className="stat-value">{totals.total}</p>
             </article>
             <article className="stat-card">
-              <p className="stat-label">Active Departments</p>
-              <p className="stat-value">{stats.activeDepartments}</p>
+              <p className="stat-label">Issue Types</p>
+              <p className="stat-value">{totals.types}</p>
             </article>
             <article className="stat-card">
-              <p className="stat-label">Actions Last 24 Hours</p>
-              <p className="stat-value">{stats.actionsLast24h}</p>
+              <p className="stat-label">Resolution Rate</p>
+              <p className="stat-value">{totals.resolutionRate}%</p>
             </article>
             <article className="stat-card">
-              <p className="stat-label">user.create ({stats.range})</p>
-              <p className="stat-value">{stats.actionBreakdown["user.create"]}</p>
+              <p className="stat-label">Pending</p>
+              <p className="stat-value">{totals.pending}</p>
             </article>
             <article className="stat-card">
-              <p className="stat-label">user.role.update ({stats.range})</p>
-              <p className="stat-value">{stats.actionBreakdown["user.role.update"]}</p>
+              <p className="stat-label">In Progress</p>
+              <p className="stat-value">{totals.inProgress}</p>
             </article>
             <article className="stat-card">
-              <p className="stat-label">user.department.update ({stats.range})</p>
-              <p className="stat-value">{stats.actionBreakdown["user.department.update"]}</p>
+              <p className="stat-label">Resolved</p>
+              <p className="stat-value">{totals.resolved}</p>
             </article>
           </div>
         ) : null}
       </section>
 
       <section className="card-box full-width">
-        <h3>Recent Audit Actions</h3>
-        {!loading && !feedback && !stats.recentActions.length ? (
-          <p className="info-box">No audit actions yet.</p>
+        <h3>Issue Charts</h3>
+        {!loading && !feedback && !issues.length ? (
+          <p className="info-box">No issues available for charts yet.</p>
         ) : null}
 
-        {!loading && !feedback && stats.recentActions.length ? (
+        {!loading && !feedback && issues.length ? (
+          <div className="chart-grid chart-grid--admin">
+            <article className="chart-card">
+              <div className="chart-card__head">
+                <h4>Status Breakdown</h4>
+                <p>Current progress mix</p>
+              </div>
+              <div className="chart-surface">
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie
+                      data={statusData}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={84}
+                      innerRadius={44}
+                      paddingAngle={2}
+                    >
+                      {statusData.map((entry, index) => (
+                        <Cell
+                          key={entry.key}
+                          fill={STATUS_CHART_COLORS[index % STATUS_CHART_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </article>
+
+            <article className="chart-card">
+              <div className="chart-card__head">
+                <h4>Issue Types</h4>
+                <p>Category counts</p>
+              </div>
+              <div className="chart-surface">
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={typeData} margin={{ top: 4, right: 8, left: 8, bottom: 18 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                    <XAxis
+                      dataKey="name"
+                      interval={0}
+                      angle={-20}
+                      textAnchor="end"
+                      tick={{ fontSize: 12 }}
+                      height={54}
+                    />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {typeData.map((entry, index) => (
+                        <Cell key={entry.key} fill={TYPE_CHART_COLORS[index % TYPE_CHART_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </article>
+
+            <article className="chart-card">
+              <div className="chart-card__head">
+                <h4>Issue Submission Trend</h4>
+                <p>Last 7 days</p>
+              </div>
+              <div className="chart-surface">
+                {issuesByDay.length ? (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={issuesByDay}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                      <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Bar dataKey="value" fill={TREND_CHART_COLOR} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="info-box">No timeline data yet.</p>
+                )}
+              </div>
+            </article>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card-box full-width">
+        <h3>Latest Issues</h3>
+        {!loading && !feedback && !recentIssues.length ? (
+          <p className="info-box">No issues yet.</p>
+        ) : null}
+
+        {!loading && !feedback && recentIssues.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Time</th>
-                  <th>Action</th>
-                  <th>Actor</th>
-                  <th>Target</th>
+                  <th>Issue</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Department</th>
                 </tr>
               </thead>
               <tbody>
-                {stats.recentActions.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{new Date(entry.created_at).toLocaleString()}</td>
-                    <td>{entry.action}</td>
-                    <td>{entry.actor_cid || "-"}</td>
-                    <td>{entry.target_cid || `#${entry.target_user_id || "-"}`}</td>
+                {recentIssues.map((issue) => (
+                  <tr key={issue.id}>
+                    <td>{new Date(issue.created_at).toLocaleString()}</td>
+                    <td>
+                      #{issue.id} {issue.title}
+                    </td>
+                    <td>{CATEGORY_LABELS[issue.category] || issue.category || "-"}</td>
+                    <td>{STATUS_LABELS[issue.status] || issue.status || "-"}</td>
+                    <td>{issue.assigned_department_name || "Unassigned"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -712,25 +886,47 @@ function AssignIssueForm({ token, onAssigned }) {
   const [issueId, setIssueId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [departments, setDepartments] = useState([]);
+  const [users, setUsers] = useState([]);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState("");
+  const [newDepartment, setNewDepartment] = useState({
+    name: "",
+    description: "",
+  });
+  const [deptUpdate, setDeptUpdate] = useState({ userId: "", departmentId: "" });
 
   useEffect(() => {
     let mounted = true;
 
-    const loadDepartments = async () => {
+    const loadData = async () => {
       try {
-        const result = await apiRequest({ path: "/issues/departments", token });
-        if (mounted) setDepartments(result.departments || []);
+        const [deptResult, userResult] = await Promise.all([
+          apiRequest({ path: "/issues/departments", token }),
+          apiRequest({ path: "/admin/users", token }),
+        ]);
+        if (mounted) {
+          setDepartments(deptResult.departments || []);
+          setUsers(userResult.users || []);
+        }
       } catch (error) {
         if (mounted) setFeedback(error.message);
       }
     };
 
-    loadDepartments();
+    loadData();
     return () => {
       mounted = false;
     };
+  }, [token]);
+
+  const refreshDepartmentAndUsers = useCallback(async () => {
+    const [deptResult, userResult] = await Promise.all([
+      apiRequest({ path: "/issues/departments", token }),
+      apiRequest({ path: "/admin/users", token }),
+    ]);
+    setDepartments(deptResult.departments || []);
+    setUsers(userResult.users || []);
   }, [token]);
 
   const submitAssign = async (event) => {
@@ -755,40 +951,245 @@ function AssignIssueForm({ token, onAssigned }) {
     }
   };
 
+  const submitCreateDepartment = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: "/admin/departments",
+        method: "POST",
+        token,
+        body: {
+          name: newDepartment.name,
+          description: newDepartment.description,
+        },
+      });
+      setFeedback("Department created successfully.");
+      setNewDepartment({
+        name: "",
+        description: "",
+      });
+      await refreshDepartmentAndUsers();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  };
+
+  const submitDepartmentUpdate = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: `/admin/users/${deptUpdate.userId}/department`,
+        method: "PATCH",
+        token,
+        body: {
+          departmentId: deptUpdate.departmentId ? Number(deptUpdate.departmentId) : null,
+        },
+      });
+      setFeedback("Staff department updated.");
+      setDeptUpdate({ userId: "", departmentId: "" });
+      await refreshDepartmentAndUsers();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  };
+
+  const handleRemoveStaffFromDepartment = async (userId) => {
+    setActionLoading(`remove-${userId}`);
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: `/admin/users/${userId}/department`,
+        method: "PATCH",
+        token,
+        body: { departmentId: null },
+      });
+      setFeedback("Staff removed from department.");
+      await refreshDepartmentAndUsers();
+    } catch (error) {
+      setFeedback(error.message);
+    } finally {
+      setActionLoading("");
+    }
+  };
+
+  const handleDeleteDepartment = async (department) => {
+    const confirmed = window.confirm(
+      `Delete department \"${department.name}\"? Staff and issue assignments will be unassigned.`,
+    );
+    if (!confirmed) return;
+
+    setActionLoading(`delete-${department.id}`);
+    setFeedback("");
+    try {
+      await apiRequest({
+        path: `/admin/departments/${department.id}`,
+        method: "DELETE",
+        token,
+      });
+      setFeedback("Department deleted successfully.");
+      await refreshDepartmentAndUsers();
+    } catch (error) {
+      setFeedback(error.message);
+    } finally {
+      setActionLoading("");
+    }
+  };
+
   return (
-    <form className="form-grid" onSubmit={submitAssign}>
-      <label>
-        Issue ID
-        <input
-          value={issueId}
-          onChange={(event) => setIssueId(event.target.value)}
-          placeholder="e.g. 12"
-          required
-        />
-      </label>
+    <section className="admin-grid">
+      <form className="form-grid card-box full-width" onSubmit={submitAssign}>
+        <h3 className="full-width">Assign Issue to Department</h3>
+        <label>
+          Issue ID
+          <input
+            value={issueId}
+            onChange={(event) => setIssueId(event.target.value)}
+            placeholder="e.g. 12"
+            required
+          />
+        </label>
 
-      <label>
-        Department
-        <select
-          value={departmentId}
-          onChange={(event) => setDepartmentId(event.target.value)}
-          required
-        >
-          <option value="">Select department</option>
-          {departments.map((item) => (
-            <option value={item.id} key={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
+        <label>
+          Department
+          <select
+            value={departmentId}
+            onChange={(event) => setDepartmentId(event.target.value)}
+            required
+          >
+            <option value="">Select department</option>
+            {departments.map((item) => (
+              <option value={item.id} key={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <button className="solid-btn" disabled={loading}>
-        {loading ? "Assigning..." : "Assign Issue"}
-      </button>
+        <button className="solid-btn" disabled={loading}>
+          {loading ? "Assigning..." : "Assign Issue"}
+        </button>
 
-      {feedback ? <p className="feedback">{feedback}</p> : null}
-    </form>
+        {feedback ? <p className="feedback">{feedback}</p> : null}
+      </form>
+
+      <form className="form-grid card-box full-width" onSubmit={submitCreateDepartment}>
+        <h3 className="full-width">Create Department</h3>
+        <label className="full-width">
+          Department Name
+          <input
+            value={newDepartment.name}
+            onChange={(e) => setNewDepartment((prev) => ({ ...prev, name: e.target.value }))}
+            required
+          />
+        </label>
+        <label className="full-width">
+          Description (optional)
+          <textarea
+            value={newDepartment.description}
+            onChange={(e) => setNewDepartment((prev) => ({ ...prev, description: e.target.value }))}
+            rows={3}
+            placeholder="e.g., Sanitation Services, Water Management, etc."
+          />
+        </label>
+        <button className="solid-btn">Create Department</button>
+      </form>
+
+      <form className="form-grid card-box full-width" onSubmit={submitDepartmentUpdate}>
+        <h3 className="full-width">Assign Staff to Department</h3>
+        <label>
+          Staff User
+          <select
+            value={deptUpdate.userId}
+            onChange={(e) => setDeptUpdate((prev) => ({ ...prev, userId: e.target.value }))}
+            required
+          >
+            <option value="">Select staff user</option>
+            {users
+              .filter((user) => user.role === "staff")
+              .map((user) => (
+                <option key={user.id} value={user.id}>
+                  #{user.id} {user.cid} ({user.full_name})
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          Department
+          <select
+            value={deptUpdate.departmentId}
+            onChange={(e) => setDeptUpdate((prev) => ({ ...prev, departmentId: e.target.value }))}
+            required
+          >
+            <option value="">Select department</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="solid-btn">Assign Staff</button>
+      </form>
+
+      <section className="card-box full-width">
+        <h3>Departments & Staff</h3>
+        {loading ? (
+          <p className="info-box">Loading departments...</p>
+        ) : departments.length ? (
+          <div className="departments-list">
+            {departments.map((dept) => {
+              const staffInDept = users.filter(
+                (user) => user.role === "staff" && user.department_id === dept.id,
+              );
+              return (
+                <article key={dept.id} className="department-item">
+                  <div className="department-header">
+                    <h4>{dept.name}</h4>
+                    <span className="staff-count">({staffInDept.length} staff)</span>
+                    <button
+                      type="button"
+                      className="danger-btn"
+                      onClick={() => handleDeleteDepartment(dept)}
+                      disabled={actionLoading === `delete-${dept.id}`}
+                    >
+                      {actionLoading === `delete-${dept.id}` ? "Deleting..." : "Delete Department"}
+                    </button>
+                  </div>
+                  {dept.description && <p className="department-desc">{dept.description}</p>}
+                  {staffInDept.length > 0 ? (
+                    <ul className="staff-list">
+                      {staffInDept.map((staff) => (
+                        <li key={staff.id}>
+                          <div>
+                            <strong>{staff.full_name}</strong> - CID: {staff.cid}
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={() => handleRemoveStaffFromDepartment(staff.id)}
+                            disabled={actionLoading === `remove-${staff.id}`}
+                          >
+                            {actionLoading === `remove-${staff.id}`
+                              ? "Removing..."
+                              : "Remove from Department"}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="info-box" style={{ marginTop: "8px" }}>No staff assigned</p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="info-box">No departments available.</p>
+        )}
+      </section>
+    </section>
   );
 }
 
@@ -796,6 +1197,7 @@ function UpdateStatusForm({ token, onUpdated }) {
   const [issueId, setIssueId] = useState("");
   const [status, setStatus] = useState("in_progress");
   const [message, setMessage] = useState("");
+  const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
 
@@ -804,6 +1206,21 @@ function UpdateStatusForm({ token, onUpdated }) {
     setLoading(true);
     setFeedback("");
     try {
+      let photoUrl;
+      if (file) {
+        const formData = new FormData();
+        formData.append("image", file);
+
+        const upload = await apiRequest({
+          path: "/issues/upload-image",
+          method: "POST",
+          token,
+          body: formData,
+          isFormData: true,
+        });
+        photoUrl = upload.photo_url;
+      }
+
       await apiRequest({
         path: `/issues/${issueId}/status`,
         method: "PATCH",
@@ -811,11 +1228,13 @@ function UpdateStatusForm({ token, onUpdated }) {
         body: {
           status,
           message: message || undefined,
+          photo_url: photoUrl || undefined,
         },
       });
       setFeedback("Issue status updated.");
       setIssueId("");
       setMessage("");
+      setFile(null);
       onUpdated();
     } catch (error) {
       setFeedback(error.message);
@@ -855,6 +1274,15 @@ function UpdateStatusForm({ token, onUpdated }) {
         />
       </label>
 
+      <label className="full-width">
+        Progress Photo (optional)
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(event) => setFile(event.target.files?.[0] || null)}
+        />
+      </label>
+
       <button className="solid-btn" disabled={loading}>
         {loading ? "Updating..." : "Update Status"}
       </button>
@@ -880,7 +1308,6 @@ function AdminUserManagement({ token }) {
   });
 
   const [roleUpdate, setRoleUpdate] = useState({ userId: "", role: "staff", departmentId: "" });
-  const [deptUpdate, setDeptUpdate] = useState({ userId: "", departmentId: "" });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -955,24 +1382,7 @@ function AdminUserManagement({ token }) {
     }
   };
 
-  const submitDepartmentUpdate = async (event) => {
-    event.preventDefault();
-    setFeedback("");
-    try {
-      await apiRequest({
-        path: `/admin/users/${deptUpdate.userId}/department`,
-        method: "PATCH",
-        token,
-        body: {
-          departmentId: deptUpdate.departmentId ? Number(deptUpdate.departmentId) : null,
-        },
-      });
-      setFeedback("Staff department updated.");
-      await loadData();
-    } catch (error) {
-      setFeedback(error.message);
-    }
-  };
+
 
   return (
     <section className="admin-grid">
@@ -1083,43 +1493,6 @@ function AdminUserManagement({ token }) {
           </select>
         </label>
         <button className="solid-btn user-role-update-btn">Update Role</button>
-      </form>
-
-      <form className="form-grid card-box" onSubmit={submitDepartmentUpdate}>
-        <h3 className="full-width">Assign Staff Department</h3>
-        <label>
-          Staff User
-          <select
-            value={deptUpdate.userId}
-            onChange={(e) => setDeptUpdate((prev) => ({ ...prev, userId: e.target.value }))}
-            required
-          >
-            <option value="">Select staff user</option>
-            {users
-              .filter((user) => user.role === "staff")
-              .map((user) => (
-                <option key={user.id} value={user.id}>
-                  #{user.id} {user.cid}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          Department
-          <select
-            value={deptUpdate.departmentId}
-            onChange={(e) => setDeptUpdate((prev) => ({ ...prev, departmentId: e.target.value }))}
-            required
-          >
-            <option value="">Select department</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="solid-btn">Update Department</button>
       </form>
 
       <section className="card-box full-width">
