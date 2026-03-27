@@ -72,17 +72,16 @@ export const uploadIssueImage = async (req, res) => {
   }
 
   try {
-    const imageFile = new File(
-      [req.file.buffer],
-      req.file.originalname || "issue-image",
-      {
-        type: req.file.mimetype || "application/octet-stream",
-      },
-    );
+    const mimeType = req.file.mimetype || "application/octet-stream";
+    const base64Payload = req.file.buffer.toString("base64");
+    const imageDataUri = `data:${mimeType};base64,${base64Payload}`;
+    const originalName = String(req.file.originalname || "issue-image")
+      .replace(/[^a-zA-Z0-9._-]/g, "-")
+      .slice(0, 120);
 
     const result = await imagekit.files.upload({
-      file: imageFile,
-      fileName: `issue-${Date.now()}-${req.file.originalname}`,
+      file: imageDataUri,
+      fileName: `issue-${Date.now()}-${originalName}`,
       folder: "/smart-city/issues",
       useUniqueFileName: true,
     });
