@@ -262,6 +262,83 @@ export const getDepartments = async (req, res) => {
   }
 };
 
+export const getIssueDetails = async (req, res) => {
+  const issueId = Number(req.validated?.params?.id ?? req.params.id);
+  const requesterRole = String(req.user?.role || "").toLowerCase();
+  const requesterId = Number(req.user?.id);
+
+  if (!Number.isInteger(issueId) || issueId <= 0) {
+    return res.status(400).json({ message: "Invalid issue id." });
+  }
+
+  try {
+    const issueResult = await pool.query(
+      `
+      SELECT i.id, i.title, i.description, i.category, i.latitude, i.longitude,
+             i.status, i.photo_url, i.created_by, i.assigned_department,
+             i.created_at, i.updated_at,
+             d.name AS assigned_department_name,
+             u.full_name AS created_by_name,
+             u.cid AS created_by_cid
+      FROM issues i
+      LEFT JOIN departments d ON d.id = i.assigned_department
+      LEFT JOIN users u ON u.id = i.created_by
+      WHERE i.id = $1
+      LIMIT 1;
+      `,
+      [issueId],
+    );
+
+    if (!issueResult.rowCount) {
+      return res.status(404).json({ message: "Issue not found." });
+    }
+
+    const issue = issueResult.rows[0];
+
+    if (requesterRole === "staff") {
+      if (!Number.isInteger(requesterId) || requesterId <= 0) {
+        return res.status(401).json({ message: "Invalid auth token payload." });
+      }
+
+      const userResult = await pool.query(
+        "SELECT department_id FROM users WHERE id = $1 LIMIT 1",
+        [requesterId],
+      );
+      const staffDepartmentId = userResult.rows[0]?.department_id;
+
+      if (
+        !staffDepartmentId ||
+        Number(staffDepartmentId) !== Number(issue.assigned_department)
+      ) {
+        return res
+          .status(403)
+          .json({ message: "You are not allowed to view this issue." });
+      }
+    }
+
+    const updatesResult = await pool.query(
+      `
+      SELECT iu.id, iu.issue_id, iu.message, iu.photo_url, iu.created_by, iu.created_at,
+             u.full_name AS created_by_name,
+             u.cid AS created_by_cid,
+             u.role AS created_by_role
+      FROM issue_updates iu
+      LEFT JOIN users u ON u.id = iu.created_by
+      WHERE iu.issue_id = $1
+      ORDER BY iu.created_at DESC;
+      `,
+      [issueId],
+    );
+
+    return res.json({
+      issue,
+      updates: updatesResult.rows,
+    });
+  } catch (error) {
+    return handleDbError(res, error);
+  }
+};
+
 export const assignIssueToDepartment = async (req, res) => {
   const issueId = Number(req.params.id);
   const departmentId = Number(req.body.departmentId);

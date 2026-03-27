@@ -6,6 +6,45 @@ import authRoutes from "./routes/authRoutes.js";
 import issueRoutes from "./routes/issueRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 
+const parseAllowedOrigins = () =>
+  String(process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const getCorsOptions = () => {
+  const configuredOrigins = parseAllowedOrigins();
+  const developmentOrigins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+  ];
+
+  const allowedOrigins = configuredOrigins.length
+    ? configuredOrigins
+    : process.env.NODE_ENV === "production"
+      ? []
+      : developmentOrigins;
+
+  return {
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("CORS origin not allowed"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  };
+};
+
 export const createApp = () => {
   const app = express();
 
@@ -20,21 +59,13 @@ export const createApp = () => {
     message: { message: "Too many requests. Please try again later." },
   });
 
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    message: { message: "Too many auth attempts. Please try again later." },
-  });
-
   app.use(helmet());
-  app.use(cors());
+  app.use(cors(getCorsOptions()));
   app.use(globalLimiter);
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-  app.use("/api/auth", authLimiter, authRoutes);
+  app.use("/api/auth", authRoutes);
   app.use("/api/issues", issueRoutes);
   app.use("/api/admin", adminRoutes);
 

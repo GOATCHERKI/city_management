@@ -1,11 +1,19 @@
 import express from "express";
 import { authorizeRoles, verifyToken } from "../middlewares/authMiddleware.js";
-import { uploadIssuePhoto } from "../middlewares/uploadMiddleware.js";
+import {
+  uploadIssuePhoto,
+  validateUploadedImageContent,
+} from "../middlewares/uploadMiddleware.js";
+import {
+  statusUpdateLimiter,
+  uploadLimiter,
+} from "../middlewares/rateLimiters.js";
 import { validateRequest } from "../middlewares/validateRequest.js";
 import {
   assignIssueToDepartment,
   createIssue,
   getDepartments,
+  getIssueDetails,
   getAllIssues,
   getMyIssues,
   updateIssueStatus,
@@ -23,6 +31,7 @@ const router = express.Router();
 
 router.post(
   "/upload-image",
+  uploadLimiter,
   verifyToken,
   authorizeRoles("citizen", "staff", "admin"),
   (req, res, next) => {
@@ -33,6 +42,7 @@ router.post(
       return next();
     });
   },
+  validateUploadedImageContent,
   uploadIssueImage,
 );
 
@@ -58,6 +68,13 @@ router.get(
   validateRequest({ querySchema: listIssuesQuerySchema }),
   getAllIssues,
 );
+router.get(
+  "/:id",
+  verifyToken,
+  authorizeRoles("staff", "admin"),
+  validateRequest({ paramsSchema: issueIdParamSchema }),
+  getIssueDetails,
+);
 router.patch(
   "/:id/assign",
   verifyToken,
@@ -70,6 +87,7 @@ router.patch(
 );
 router.patch(
   "/:id/status",
+  statusUpdateLimiter,
   verifyToken,
   authorizeRoles("staff", "admin"),
   validateRequest({

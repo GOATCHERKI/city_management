@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "lint": "node scripts/lint.js",
     "migrate": "node db/runMigrations.js",
+    "migrate:check": "node db/runMigrations.js",
     "migrate:postgis": "node db/runMigrations.js --postgis",
     "test": "node --test tests"
   },

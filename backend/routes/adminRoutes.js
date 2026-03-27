@@ -1,6 +1,7 @@
 import express from "express";
 import { authorizeRoles, verifyToken } from "../middlewares/authMiddleware.js";
 import { validateRequest } from "../middlewares/validateRequest.js";
+import { adminMutationLimiter } from "../middlewares/rateLimiters.js";
 import {
   listAdminAuditLogs,
   createDepartment,
@@ -39,21 +40,25 @@ router.get(
 );
 router.post(
   "/departments",
+  adminMutationLimiter,
   validateRequest({ bodySchema: createDepartmentSchema }),
   createDepartment,
 );
 router.delete(
   "/departments/:id",
+  adminMutationLimiter,
   validateRequest({ paramsSchema: departmentIdParamSchema }),
   deleteDepartment,
 );
 router.post(
   "/users",
+  adminMutationLimiter,
   validateRequest({ bodySchema: createUserByAdminSchema }),
   createUserByAdmin,
 );
 router.patch(
   "/users/:id/role",
+  adminMutationLimiter,
   validateRequest({
     paramsSchema: userIdParamSchema,
     bodySchema: updateUserRoleSchema,
@@ -62,6 +67,7 @@ router.patch(
 );
 router.patch(
   "/users/:id/department",
+  adminMutationLimiter,
   validateRequest({
     paramsSchema: userIdParamSchema,
     bodySchema: updateUserDepartmentSchema,
