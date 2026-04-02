@@ -188,8 +188,6 @@ If you share demo access publicly:
 
 ### Demo Credentials
 
-Use temporary demo-only accounts and rotate them regularly.
-
 | Role    | Username / CID | Password      |
 | ------- | -------------- | ------------- |
 | Admin   | `admin2`       | `Password123` |
