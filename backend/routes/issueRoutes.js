@@ -71,7 +71,7 @@ router.get(
 router.get(
   "/:id",
   verifyToken,
-  authorizeRoles("staff", "admin"),
+  authorizeRoles("citizen", "staff", "admin"),
   validateRequest({ paramsSchema: issueIdParamSchema }),
   getIssueDetails,
 );

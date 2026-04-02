@@ -287,6 +287,10 @@ function MyReports({ token, refreshKey }) {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedIssueId, setSelectedIssueId] = useState(null);
+  const [selectedIssueDetails, setSelectedIssueDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState("");
 
   const mappedIssues = useMemo(() => {
     return issues
@@ -340,6 +344,35 @@ function MyReports({ token, refreshKey }) {
     };
   }, [refreshKey, token]);
 
+  const openIssueDetails = async (issueId) => {
+    if (selectedIssueId === issueId) {
+      setSelectedIssueId(null);
+      setSelectedIssueDetails(null);
+      setDetailsError("");
+      return;
+    }
+
+    setSelectedIssueId(issueId);
+    setDetailsLoading(true);
+    setDetailsError("");
+    try {
+      const result = await apiRequest({ path: `/issues/${issueId}`, token });
+      setSelectedIssueDetails(result);
+    } catch (fetchError) {
+      setDetailsError(fetchError.message);
+      setSelectedIssueDetails(null);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const closeIssueDetails = () => {
+    setSelectedIssueId(null);
+    setSelectedIssueDetails(null);
+    setDetailsError("");
+    setDetailsLoading(false);
+  };
+
   if (loading) return <p className="info-box">Loading reports...</p>;
   if (error) return <p className="info-box">{error}</p>;
   if (!issues.length) return <p className="info-box">No reports yet.</p>;
@@ -380,9 +413,21 @@ function MyReports({ token, refreshKey }) {
 
       <div className="report-list">
         {issues.map((item) => (
-          <article className="report-card" key={item.id}>
+          <article
+            className="report-card report-card--clickable"
+            key={item.id}
+            onClick={() => openIssueDetails(item.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openIssueDetails(item.id);
+              }
+            }}
+          >
             <div className="report-head">
-              <h3>{item.title}</h3>
+              <h3>#{item.id} {item.title}</h3>
               <span className={STATUS_CLASS[item.status] || "status"}>{item.status}</span>
             </div>
             <p>{item.description}</p>
@@ -415,6 +460,100 @@ function MyReports({ token, refreshKey }) {
           </article>
         ))}
       </div>
+
+      {selectedIssueId ? (
+        <section className="issue-modal-overlay" onClick={closeIssueDetails} role="presentation">
+          <article
+            className="issue-modal-card"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Issue details"
+          >
+            <div className="issue-modal-head">
+              <h4>Issue Details #{selectedIssueId}</h4>
+              <button type="button" className="ghost-btn" onClick={closeIssueDetails}>
+                Close
+              </button>
+            </div>
+
+            {detailsLoading ? <p className="info-box">Loading details...</p> : null}
+            {detailsError ? <p className="info-box">{detailsError}</p> : null}
+
+            {!detailsLoading && !detailsError && selectedIssueDetails?.issue ? (
+              <>
+                <div className="meta-row">
+                  <span>Status: {selectedIssueDetails.issue.status}</span>
+                  <span>Department: {selectedIssueDetails.issue.assigned_department_name || "Unassigned"}</span>
+                </div>
+
+                <p className="issue-detail-text">
+                  {selectedIssueDetails.issue.description || "No description provided."}
+                </p>
+
+                <div className="issue-detail-block">
+                  <h5>Citizen Uploaded Photo</h5>
+                  {selectedIssueDetails.issue.photo_url ? (
+                    <a
+                      href={selectedIssueDetails.issue.photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="photo-link"
+                    >
+                      <img
+                        src={selectedIssueDetails.issue.photo_url}
+                        alt={`Citizen upload for issue ${selectedIssueId}`}
+                        className="issue-photo"
+                        loading="lazy"
+                      />
+                      Open citizen photo
+                    </a>
+                  ) : (
+                    <p className="info-box">No citizen photo uploaded.</p>
+                  )}
+                </div>
+
+                <div className="issue-detail-block">
+                  <h5>Department Progress Updates</h5>
+                  {selectedIssueDetails.updates?.length ? (
+                    <ul className="issue-updates-list">
+                      {selectedIssueDetails.updates.map((update) => (
+                        <li key={update.id} className="issue-update-item">
+                          <div className="meta-row">
+                            <span>
+                              By: {update.created_by_name || update.created_by_cid || `User ${update.created_by}`}
+                            </span>
+                            <span>{new Date(update.created_at).toLocaleString()}</span>
+                          </div>
+                          <p className="issue-detail-text">{update.message}</p>
+                          {update.cost_added != null ? (
+                            <p className="issue-cost-pill">Cost Added: ${Number(update.cost_added).toFixed(2)}</p>
+                          ) : null}
+                          {update.photo_url ? (
+                            <a href={update.photo_url} target="_blank" rel="noreferrer" className="photo-link">
+                              <img
+                                src={update.photo_url}
+                                alt={`Progress update ${update.id}`}
+                                className="issue-photo"
+                                loading="lazy"
+                              />
+                              Open staff photo
+                            </a>
+                          ) : (
+                            <p className="info-box">No photo for this update.</p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="info-box">No updates yet.</p>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </article>
+        </section>
+      ) : null}
     </section>
   );
 }

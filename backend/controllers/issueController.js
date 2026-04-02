@@ -20,7 +20,9 @@ const normalizeIssuePayload = (body) => {
       ? null
       : Number(body.estimated_cost);
   const budgetId =
-    body.budget_id === null || body.budget_id === undefined || body.budget_id === ""
+    body.budget_id === null ||
+    body.budget_id === undefined ||
+    body.budget_id === ""
       ? null
       : Number(body.budget_id);
 
@@ -370,7 +372,9 @@ export const assignIssueToDepartment = async (req, res) => {
       ? null
       : Number(req.body.estimatedCost);
   const budgetId =
-    req.body.budgetId === null || req.body.budgetId === undefined || req.body.budgetId === ""
+    req.body.budgetId === null ||
+    req.body.budgetId === undefined ||
+    req.body.budgetId === ""
       ? null
       : Number(req.body.budgetId);
 
@@ -457,7 +461,11 @@ export const assignIssueToDepartment = async (req, res) => {
       : null;
     const nextBudgetIdNumber = nextBudgetId ? Number(nextBudgetId) : null;
 
-    if (currentBudgetId && nextBudgetIdNumber && currentBudgetId === nextBudgetIdNumber) {
+    if (
+      currentBudgetId &&
+      nextBudgetIdNumber &&
+      currentBudgetId === nextBudgetIdNumber
+    ) {
       const delta = nextReservedCost - currentReservedCost;
       if (delta !== 0) {
         await client.query(
@@ -596,7 +604,9 @@ export const updateIssueStatus = async (req, res) => {
       );
       const finalCost = Number(costResult.rows[0]?.total_cost || 0);
       const priorAccountedCost = Number(
-        issueResult.rows[0].final_cost ?? issueResult.rows[0].estimated_cost ?? 0,
+        issueResult.rows[0].final_cost ??
+          issueResult.rows[0].estimated_cost ??
+          0,
       );
       const budgetDelta = finalCost - priorAccountedCost;
 
