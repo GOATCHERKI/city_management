@@ -447,6 +447,7 @@ function AdminWorkspace({ token, activeTab, onTabChange }) {
 
 function AdminDashboard({ token }) {
   const [issues, setIssues] = useState([]);
+  const [financialSummary, setFinancialSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
@@ -457,9 +458,13 @@ function AdminDashboard({ token }) {
       setLoading(true);
       setFeedback("");
       try {
-        const result = await apiRequest({ path: "/issues", token });
+        const [result, summaryResult] = await Promise.all([
+          apiRequest({ path: "/issues", token }),
+          apiRequest({ path: "/admin/financial-summary", token }),
+        ]);
         if (mounted) {
           setIssues(result.issues || []);
+          setFinancialSummary(summaryResult || null);
         }
       } catch (error) {
         if (mounted) {
@@ -562,170 +567,286 @@ function AdminDashboard({ token }) {
     [issues],
   );
 
+  const statusTargetTag = totals.pending > totals.resolved ? "Needs Focus" : "On Track";
+  const statusTargetText = totals.pending > totals.resolved
+    ? "Pending queue is above resolved volume"
+    : "Resolved volume is keeping pace";
+
+  const currency = useMemo(
+    () =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      }),
+    [],
+  );
+
+  const budgetVsActualData = useMemo(() => {
+    return (financialSummary?.budgetVsActual || []).map((item) => ({
+      name: item.department_name,
+      budget: Number(item.budget_total || 0),
+      actual: Number(item.budget_used || 0),
+    }));
+  }, [financialSummary]);
+
+  const categoryCostData = useMemo(() => {
+    return (financialSummary?.categoryCosts || []).slice(0, 6).map((item) => ({
+      name: CATEGORY_LABELS[item.category] || item.category || "Unknown",
+      total: Number(item.total_final_cost || 0),
+      avg: Number(item.avg_final_cost || 0),
+    }));
+  }, [financialSummary]);
+
+  const efficiencyData = useMemo(() => {
+    return (financialSummary?.efficiency || []).slice(0, 12).map((item) => ({
+      id: `#${item.id}`,
+      hours: Number(item.resolution_hours || 0),
+      cost: Number(item.final_cost || 0),
+    }));
+  }, [financialSummary]);
+
+  const overallFinance = financialSummary?.overall || {};
+  const overBudgetCount = (financialSummary?.overBudget || []).length;
+
   return (
-    <section className="admin-grid">
-      <section className="card-box full-width">
-        <h3>Issue Dashboard</h3>
-        {loading ? <p className="info-box">Loading issue analytics...</p> : null}
-        {feedback ? <p className="feedback">{feedback}</p> : null}
+    <section className="admin-dashboard-v2">
+      <header className="admin-dashboard-v2__head">
+        <h2>City Manager&apos;s Dashboard</h2>
+        <p>Operational overview of requests, status velocity, and department workload</p>
+      </header>
 
-        {!loading && !feedback ? (
-          <div className="dashboard-stats">
-            <article className="stat-card">
-              <p className="stat-label">Total Issues</p>
-              <p className="stat-value">{totals.total}</p>
-            </article>
-            <article className="stat-card">
-              <p className="stat-label">Issue Types</p>
-              <p className="stat-value">{totals.types}</p>
-            </article>
-            <article className="stat-card">
-              <p className="stat-label">Resolution Rate</p>
-              <p className="stat-value">{totals.resolutionRate}%</p>
-            </article>
-            <article className="stat-card">
-              <p className="stat-label">Pending</p>
-              <p className="stat-value">{totals.pending}</p>
-            </article>
-            <article className="stat-card">
-              <p className="stat-label">In Progress</p>
-              <p className="stat-value">{totals.inProgress}</p>
-            </article>
-            <article className="stat-card">
-              <p className="stat-label">Resolved</p>
-              <p className="stat-value">{totals.resolved}</p>
-            </article>
-          </div>
-        ) : null}
-      </section>
+      {loading ? <p className="info-box">Loading issue analytics...</p> : null}
+      {feedback ? <p className="feedback">{feedback}</p> : null}
+      {!loading && !feedback && !issues.length ? <p className="info-box">No issues available yet.</p> : null}
 
-      <section className="card-box full-width admin-charts-section">
-        <h3>Issue Charts</h3>
-        {!loading && !feedback && !issues.length ? (
-          <p className="info-box">No issues available for charts yet.</p>
-        ) : null}
+      {!loading && !feedback && issues.length ? (
+        <section className="admin-tile-grid">
+          <article className="admin-tile admin-tile--kpi">
+            <div className="admin-tile__head">
+              <h3>Total Service Requests</h3>
+              <span className="admin-chip">Updated Live</span>
+            </div>
+            <p className="admin-tile__big">{totals.total}</p>
+            <p className="admin-tile__meta">Across {totals.types} issue categories</p>
+          </article>
 
-        {!loading && !feedback && issues.length ? (
-          <div className="chart-grid chart-grid--admin">
-            <article className="chart-card">
-              <div className="chart-card__head">
-                <h4>Status Breakdown</h4>
-                <p>Current progress mix</p>
+          <article className="admin-tile">
+            <div className="admin-tile__head">
+              <h3>Status Breakdown</h3>
+              <span className={`admin-chip ${statusTargetTag === "Needs Focus" ? "admin-chip--warn" : "admin-chip--ok"}`}>
+                {statusTargetTag}
+              </span>
+            </div>
+            <p className="admin-tile__sub">{statusTargetText}</p>
+            <div className="admin-tile__chart">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={statusData}
+                    dataKey="value"
+                    nameKey="name"
+                    outerRadius={74}
+                    innerRadius={40}
+                    paddingAngle={2}
+                  >
+                    {statusData.map((entry, index) => (
+                      <Cell key={entry.key} fill={STATUS_CHART_COLORS[index % STATUS_CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            {overBudgetCount ? (
+              <p className="admin-overbudget-alert">
+                Over-budget: {(financialSummary?.overBudget || []).map((item) => item.department_name).join(", ")}
+              </p>
+            ) : null}
+          </article>
+
+          <article className="admin-tile">
+            <div className="admin-tile__head">
+              <h3>Issue Type Mix</h3>
+              <span className="admin-chip">Top Categories</span>
+            </div>
+            <p className="admin-tile__sub">Distribution by issue type</p>
+            <div className="admin-tile__chart">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={typeData.slice(0, 6)} margin={{ top: 4, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-16} textAnchor="end" height={42} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[5, 5, 0, 0]}>
+                    {typeData.slice(0, 6).map((entry, index) => (
+                      <Cell key={entry.key} fill={TYPE_CHART_COLORS[index % TYPE_CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
+
+          <article className="admin-tile">
+            <div className="admin-tile__head">
+              <h3>7-Day Submission Trend</h3>
+              <span className="admin-chip">Weekly</span>
+            </div>
+            <p className="admin-tile__sub">Incoming requests by day</p>
+            <div className="admin-tile__chart">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={issuesByDay}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill={TREND_CHART_COLOR} radius={[5, 5, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
+
+          <article className="admin-tile admin-tile--metrics">
+            <div className="admin-tile__head">
+              <h3>Execution Snapshot</h3>
+              <span className="admin-chip">Live Counters</span>
+            </div>
+            <div className="admin-metric-list">
+              <div>
+                <span>Resolution Rate</span>
+                <strong>{totals.resolutionRate}%</strong>
               </div>
-              <div className="chart-surface">
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      dataKey="value"
-                      nameKey="name"
-                      outerRadius={84}
-                      innerRadius={44}
-                      paddingAngle={2}
-                    >
-                      {statusData.map((entry, index) => (
-                        <Cell
-                          key={entry.key}
-                          fill={STATUS_CHART_COLORS[index % STATUS_CHART_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div>
+                <span>Pending</span>
+                <strong>{totals.pending}</strong>
               </div>
-            </article>
+              <div>
+                <span>In Progress</span>
+                <strong>{totals.inProgress}</strong>
+              </div>
+              <div>
+                <span>Resolved</span>
+                <strong>{totals.resolved}</strong>
+              </div>
+              <div>
+                <span>Avg Cost / Incident</span>
+                <strong>{currency.format(Number(overallFinance.avg_cost_per_issue || 0))}</strong>
+              </div>
+              <div>
+                <span>Total Cost</span>
+                <strong>{currency.format(Number(overallFinance.total_final_cost || 0))}</strong>
+              </div>
+              <div>
+                <span>Over-budget Departments</span>
+                <strong>{overBudgetCount}</strong>
+              </div>
+            </div>
+          </article>
 
-            <article className="chart-card">
-              <div className="chart-card__head">
-                <h4>Issue Types</h4>
-                <p>Category counts</p>
-              </div>
-              <div className="chart-surface">
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={typeData} margin={{ top: 4, right: 8, left: 8, bottom: 18 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
-                    <XAxis
-                      dataKey="name"
-                      interval={0}
-                      angle={-20}
-                      textAnchor="end"
-                      tick={{ fontSize: 12 }}
-                      height={54}
-                    />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                      {typeData.map((entry, index) => (
-                        <Cell key={entry.key} fill={TYPE_CHART_COLORS[index % TYPE_CHART_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </article>
+          <article className="admin-tile">
+            <div className="admin-tile__head">
+              <h3>Budget vs Actual by Department</h3>
+              <span className={`admin-chip ${overBudgetCount ? "admin-chip--warn" : "admin-chip--ok"}`}>
+                {overBudgetCount ? "Over Budget" : "Healthy"}
+              </span>
+            </div>
+            <p className="admin-tile__sub">Allocated vs consumed budget</p>
+            <div className="admin-tile__chart">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={budgetVsActualData} margin={{ top: 4, right: 8, left: 8, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-16} textAnchor="end" height={46} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value) => currency.format(Number(value || 0))} />
+                  <Legend />
+                  <Bar dataKey="budget" fill="#64748b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="actual" fill="#0b5cab" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
 
-            <article className="chart-card">
-              <div className="chart-card__head">
-                <h4>Issue Submission Trend</h4>
-                <p>Last 7 days</p>
-              </div>
-              <div className="chart-surface">
-                {issuesByDay.length ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={issuesByDay}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
-                      <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Bar dataKey="value" fill={TREND_CHART_COLOR} radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="info-box">No timeline data yet.</p>
-                )}
-              </div>
-            </article>
-          </div>
-        ) : null}
-      </section>
+          <article className="admin-tile">
+            <div className="admin-tile__head">
+              <h3>Cost per Category</h3>
+              <span className="admin-chip">Financial Mix</span>
+            </div>
+            <p className="admin-tile__sub">Total closure cost by category</p>
+            <div className="admin-tile__chart">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={categoryCostData} margin={{ top: 4, right: 8, left: 8, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-16} textAnchor="end" height={46} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value) => currency.format(Number(value || 0))} />
+                  <Bar dataKey="total" fill="#b45309" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
 
-      <section className="card-box full-width">
-        <h3>Latest Issues</h3>
-        {!loading && !feedback && !recentIssues.length ? (
-          <p className="info-box">No issues yet.</p>
-        ) : null}
+          <article className="admin-tile">
+            <div className="admin-tile__head">
+              <h3>Cost vs Resolution Time</h3>
+              <span className="admin-chip">Efficiency</span>
+            </div>
+            <p className="admin-tile__sub">Higher bars indicate expensive or slower closures</p>
+            <div className="admin-tile__chart">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={efficiencyData} margin={{ top: 4, right: 8, left: 8, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbe7f4" />
+                  <XAxis dataKey="id" tick={{ fontSize: 10 }} interval={0} angle={-16} textAnchor="end" height={44} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value, name) => (name === "cost" ? currency.format(Number(value || 0)) : `${value}h`)} />
+                  <Legend />
+                  <Bar yAxisId="left" dataKey="hours" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="right" dataKey="cost" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
 
-        {!loading && !feedback && recentIssues.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Issue</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Department</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentIssues.map((issue) => (
-                  <tr key={issue.id}>
-                    <td>{new Date(issue.created_at).toLocaleString()}</td>
-                    <td>
-                      #{issue.id} {issue.title}
-                    </td>
-                    <td>{CATEGORY_LABELS[issue.category] || issue.category || "-"}</td>
-                    <td>{STATUS_LABELS[issue.status] || issue.status || "-"}</td>
-                    <td>{issue.assigned_department_name || "Unassigned"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
+          <article className="admin-tile admin-tile--table">
+            <div className="admin-tile__head">
+              <h3>Latest Issues</h3>
+              <span className="admin-chip">Recent 12</span>
+            </div>
+            {!recentIssues.length ? (
+              <p className="info-box">No issues yet.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Issue</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Department</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentIssues.map((issue) => (
+                      <tr key={issue.id}>
+                        <td>{new Date(issue.created_at).toLocaleString()}</td>
+                        <td>
+                          #{issue.id} {issue.title}
+                        </td>
+                        <td>{CATEGORY_LABELS[issue.category] || issue.category || "-"}</td>
+                        <td>{STATUS_LABELS[issue.status] || issue.status || "-"}</td>
+                        <td>{issue.assigned_department_name || "Unassigned"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -942,6 +1063,19 @@ function AllIssues({ token, refreshKey }) {
                   <span>Department: {selectedIssueDetails.issue.assigned_department_name || "Unassigned"}</span>
                 </div>
 
+                <div className="meta-row">
+                  <span>
+                    Estimated Cost: {selectedIssueDetails.issue.estimated_cost != null
+                      ? `$${Number(selectedIssueDetails.issue.estimated_cost).toFixed(2)}`
+                      : "-"}
+                  </span>
+                  <span>
+                    Final Cost: {selectedIssueDetails.issue.final_cost != null
+                      ? `$${Number(selectedIssueDetails.issue.final_cost).toFixed(2)}`
+                      : "-"}
+                  </span>
+                </div>
+
                 <p className="issue-detail-text">
                   {selectedIssueDetails.issue.description || "No description provided."}
                 </p>
@@ -981,6 +1115,9 @@ function AllIssues({ token, refreshKey }) {
                             <span>{new Date(update.created_at).toLocaleString()}</span>
                           </div>
                           <p className="issue-detail-text">{update.message}</p>
+                          {update.cost_added != null ? (
+                            <p className="issue-cost-pill">Cost Added: ${Number(update.cost_added).toFixed(2)}</p>
+                          ) : null}
                           {update.photo_url ? (
                             <a href={update.photo_url} target="_blank" rel="noreferrer" className="photo-link">
                               <img
@@ -1013,29 +1150,42 @@ function AllIssues({ token, refreshKey }) {
 function AssignIssueForm({ token, onAssigned }) {
   const [issueId, setIssueId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
+  const [budgetId, setBudgetId] = useState("");
+  const [estimatedCost, setEstimatedCost] = useState("");
   const [departments, setDepartments] = useState([]);
+  const [budgets, setBudgets] = useState([]);
   const [users, setUsers] = useState([]);
   const [feedback, setFeedback] = useState("");
+  const [budgetFeedback, setBudgetFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+  const [budgetSaving, setBudgetSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [newDepartment, setNewDepartment] = useState({
     name: "",
     description: "",
   });
   const [deptUpdate, setDeptUpdate] = useState({ userId: "", departmentId: "" });
+  const [newBudget, setNewBudget] = useState({
+    departmentId: "",
+    category: "",
+    periodMonth: new Date().toISOString().slice(0, 7),
+    totalAmount: "",
+  });
 
   useEffect(() => {
     let mounted = true;
 
     const loadData = async () => {
       try {
-        const [deptResult, userResult] = await Promise.all([
+        const [deptResult, userResult, budgetResult] = await Promise.all([
           apiRequest({ path: "/issues/departments", token }),
           apiRequest({ path: "/admin/users", token }),
+          apiRequest({ path: "/admin/budgets", token }),
         ]);
         if (mounted) {
           setDepartments(deptResult.departments || []);
           setUsers(userResult.users || []);
+          setBudgets(budgetResult.budgets || []);
         }
       } catch (error) {
         if (mounted) setFeedback(error.message);
@@ -1049,12 +1199,19 @@ function AssignIssueForm({ token, onAssigned }) {
   }, [token]);
 
   const refreshDepartmentAndUsers = useCallback(async () => {
-    const [deptResult, userResult] = await Promise.all([
+    const [deptResult, userResult, budgetResult] = await Promise.all([
       apiRequest({ path: "/issues/departments", token }),
       apiRequest({ path: "/admin/users", token }),
+      apiRequest({ path: "/admin/budgets", token }),
     ]);
     setDepartments(deptResult.departments || []);
     setUsers(userResult.users || []);
+    setBudgets(budgetResult.budgets || []);
+  }, [token]);
+
+  const refreshBudgetsOnly = useCallback(async () => {
+    const budgetResult = await apiRequest({ path: "/admin/budgets", token });
+    setBudgets(budgetResult.budgets || []);
   }, [token]);
 
   const submitAssign = async (event) => {
@@ -1066,11 +1223,17 @@ function AssignIssueForm({ token, onAssigned }) {
         path: `/issues/${issueId}/assign`,
         method: "PATCH",
         token,
-        body: { departmentId: Number(departmentId) },
+        body: {
+          departmentId: Number(departmentId),
+          budgetId: budgetId ? Number(budgetId) : undefined,
+          estimatedCost: estimatedCost ? Number(estimatedCost) : undefined,
+        },
       });
       setFeedback("Issue assigned successfully.");
       setIssueId("");
       setDepartmentId("");
+      setBudgetId("");
+      setEstimatedCost("");
       onAssigned();
     } catch (error) {
       setFeedback(error.message);
@@ -1123,6 +1286,32 @@ function AssignIssueForm({ token, onAssigned }) {
     }
   };
 
+  const submitCreateBudget = async (event) => {
+    event.preventDefault();
+    setBudgetSaving(true);
+    setBudgetFeedback("");
+    try {
+      await apiRequest({
+        path: "/admin/budgets",
+        method: "POST",
+        token,
+        body: {
+          departmentId: Number(newBudget.departmentId),
+          category: newBudget.category || null,
+          periodMonth: newBudget.periodMonth,
+          totalAmount: Number(newBudget.totalAmount),
+        },
+      });
+      setBudgetFeedback("Budget saved successfully.");
+      setNewBudget((prev) => ({ ...prev, category: "", totalAmount: "" }));
+      await refreshBudgetsOnly();
+    } catch (error) {
+      setBudgetFeedback(error.message);
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
+
   const handleRemoveStaffFromDepartment = async (userId) => {
     setActionLoading(`remove-${userId}`);
     setFeedback("");
@@ -1167,6 +1356,14 @@ function AssignIssueForm({ token, onAssigned }) {
 
   return (
     <section className="admin-grid">
+      <section className="card-box full-width">
+        <h3>Funding & Budget Setup</h3>
+        <p className="info-box">
+          Admin can define monthly department budgets here (for example, government funding allocations),
+          then link budgets and estimated costs while assigning incidents.
+        </p>
+      </section>
+
       <form className="form-grid card-box full-width" onSubmit={submitAssign}>
         <h3 className="full-width">Assign Issue to Department</h3>
         <label>
@@ -1183,7 +1380,10 @@ function AssignIssueForm({ token, onAssigned }) {
           Department
           <select
             value={departmentId}
-            onChange={(event) => setDepartmentId(event.target.value)}
+            onChange={(event) => {
+              setDepartmentId(event.target.value);
+              setBudgetId("");
+            }}
             required
           >
             <option value="">Select department</option>
@@ -1193,6 +1393,33 @@ function AssignIssueForm({ token, onAssigned }) {
               </option>
             ))}
           </select>
+        </label>
+
+        <label>
+          Budget (optional)
+          <select value={budgetId} onChange={(event) => setBudgetId(event.target.value)}>
+            <option value="">No budget</option>
+            {budgets
+              .filter((item) => !departmentId || Number(item.department_id) === Number(departmentId))
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.department_name} / {item.period_month?.slice(0, 7)} / {item.category || "All"}
+                </option>
+              ))}
+          </select>
+        </label>
+
+        <label>
+          Estimated Cost (optional)
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={estimatedCost}
+            onChange={(event) => setEstimatedCost(event.target.value)}
+            required={Boolean(budgetId)}
+            placeholder="e.g. 120.00"
+          />
         </label>
 
         <button className="solid-btn" disabled={loading}>
@@ -1261,6 +1488,93 @@ function AssignIssueForm({ token, onAssigned }) {
         <button className="solid-btn">Assign Staff</button>
       </form>
 
+      <form className="form-grid card-box full-width" onSubmit={submitCreateBudget}>
+        <h3 className="full-width">Create / Update Department Budget</h3>
+        <label>
+          Department
+          <select
+            value={newBudget.departmentId}
+            onChange={(e) => setNewBudget((prev) => ({ ...prev, departmentId: e.target.value }))}
+            required
+          >
+            <option value="">Select department</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Category (optional)
+          <input
+            value={newBudget.category}
+            onChange={(e) => setNewBudget((prev) => ({ ...prev, category: e.target.value }))}
+            placeholder="e.g. pothole"
+          />
+        </label>
+        <label>
+          Period (month)
+          <input
+            type="month"
+            value={newBudget.periodMonth}
+            onChange={(e) => setNewBudget((prev) => ({ ...prev, periodMonth: e.target.value }))}
+            required
+          />
+        </label>
+        <label>
+          Budget Amount
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={newBudget.totalAmount}
+            onChange={(e) => setNewBudget((prev) => ({ ...prev, totalAmount: e.target.value }))}
+            placeholder="e.g. 50000"
+            required
+          />
+        </label>
+        <button className="solid-btn" disabled={budgetSaving}>
+          {budgetSaving ? "Saving..." : "Save Budget"}
+        </button>
+
+        {budgetFeedback ? <p className="feedback full-width">{budgetFeedback}</p> : null}
+      </form>
+
+      <section className="card-box full-width">
+        <h3>Budget Registry</h3>
+        {budgets.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>Category</th>
+                  <th>Period</th>
+                  <th>Total</th>
+                  <th>Used</th>
+                  <th>Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgets.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.department_name}</td>
+                    <td>{item.category || "All"}</td>
+                    <td>{item.period_month?.slice(0, 7)}</td>
+                    <td>${Number(item.total_amount || 0).toFixed(2)}</td>
+                    <td>${Number(item.used_amount || 0).toFixed(2)}</td>
+                    <td>${Number(item.remaining_amount || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="info-box">No budgets configured yet.</p>
+        )}
+      </section>
+
       <section className="card-box full-width">
         <h3>Departments & Staff</h3>
         {loading ? (
@@ -1325,6 +1639,7 @@ function UpdateStatusForm({ token, onUpdated }) {
   const [issueId, setIssueId] = useState("");
   const [status, setStatus] = useState("in_progress");
   const [message, setMessage] = useState("");
+  const [costAdded, setCostAdded] = useState("");
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -1356,12 +1671,14 @@ function UpdateStatusForm({ token, onUpdated }) {
         body: {
           status,
           message: message || undefined,
+          cost_added: costAdded ? Number(costAdded) : undefined,
           photo_url: photoUrl || undefined,
         },
       });
       setFeedback("Issue status updated.");
       setIssueId("");
       setMessage("");
+      setCostAdded("");
       setFile(null);
       onUpdated();
     } catch (error) {
@@ -1399,6 +1716,18 @@ function UpdateStatusForm({ token, onUpdated }) {
           onChange={(event) => setMessage(event.target.value)}
           rows={3}
           placeholder="Technician visited site..."
+        />
+      </label>
+
+      <label>
+        Cost Added (optional)
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={costAdded}
+          onChange={(event) => setCostAdded(event.target.value)}
+          placeholder="e.g. 80.50"
         />
       </label>
 

@@ -88,6 +88,7 @@ export const auditLogQuerySchema = z
         "user.department.update",
         "department.create",
         "department.delete",
+        "budget.upsert",
       ])
       .optional(),
   })
@@ -103,4 +104,21 @@ export const auditLogQuerySchema = z
 
 export const dashboardQuerySchema = z.object({
   range: z.enum(["today", "7d", "30d"]).optional(),
+});
+
+export const createBudgetSchema = z.object({
+  departmentId: z.coerce.number().int().positive(),
+  category: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .transform((value) => (value && value.length ? value : null)),
+  periodMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  totalAmount: z.coerce.number().min(0),
+});
+
+export const listBudgetQuerySchema = z.object({
+  departmentId: z.coerce.number().int().positive().optional(),
+  periodMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
 });

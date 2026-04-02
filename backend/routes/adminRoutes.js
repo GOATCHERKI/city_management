@@ -11,13 +11,18 @@ import {
   updateUserDepartment,
   updateUserRole,
   getDashboardStats,
+  createBudget,
+  listBudgets,
+  getFinancialSummary,
 } from "../controllers/adminController.js";
 import {
   auditLogQuerySchema,
+  createBudgetSchema,
   createDepartmentSchema,
   createUserByAdminSchema,
   departmentIdParamSchema,
   dashboardQuerySchema,
+  listBudgetQuerySchema,
   updateUserDepartmentSchema,
   updateUserRoleSchema,
   userIdParamSchema,
@@ -33,6 +38,18 @@ router.get(
   validateRequest({ querySchema: dashboardQuerySchema }),
   getDashboardStats,
 );
+router.get(
+  "/budgets",
+  validateRequest({ querySchema: listBudgetQuerySchema }),
+  listBudgets,
+);
+router.post(
+  "/budgets",
+  adminMutationLimiter,
+  validateRequest({ bodySchema: createBudgetSchema }),
+  createBudget,
+);
+router.get("/financial-summary", getFinancialSummary);
 router.get(
   "/audit-logs",
   validateRequest({ querySchema: auditLogQuerySchema }),

@@ -106,6 +106,22 @@ const handleAdminDbError = (res, error) => {
   return res.status(500).json({ message: "Internal server error" });
 };
 
+const normalizePeriodMonth = (periodMonth) => {
+  const [year, month] = String(periodMonth || "").split("-");
+  const yearNum = Number(year);
+  const monthNum = Number(month);
+
+  if (!Number.isInteger(yearNum) || !Number.isInteger(monthNum)) {
+    return null;
+  }
+
+  if (monthNum < 1 || monthNum > 12) {
+    return null;
+  }
+
+  return `${yearNum.toString().padStart(4, "0")}-${String(monthNum).padStart(2, "0")}-01`;
+};
+
 export const listUsers = async (req, res) => {
   try {
     const result = await pool.query(
@@ -735,6 +751,210 @@ export const getDashboardStats = async (req, res) => {
       actionsLast24h,
       actionBreakdown,
       recentActions,
+    });
+  } catch (error) {
+    return handleAdminDbError(res, error);
+  }
+};
+
+export const createBudget = async (req, res) => {
+  const actor = getAuditContext(req);
+  const departmentId = Number(req.body?.departmentId);
+  const category = req.body?.category ? String(req.body.category).trim() : null;
+  const totalAmount = Number(req.body?.totalAmount);
+  const periodMonth = normalizePeriodMonth(req.body?.periodMonth);
+
+  if (!periodMonth) {
+    return res.status(400).json({ message: "periodMonth must be in YYYY-MM format." });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      INSERT INTO budgets (department_id, category, period_month, total_amount)
+      VALUES ($1, NULLIF($2, ''), $3::date, $4)
+      ON CONFLICT (department_id, category, period_month)
+      DO UPDATE SET total_amount = EXCLUDED.total_amount,
+                    updated_at = NOW()
+      RETURNING id, department_id, category, period_month, total_amount, used_amount, created_at, updated_at;
+      `,
+      [departmentId, category, periodMonth, totalAmount],
+    );
+
+    await insertAuditLog(client, {
+      actor,
+      targetUserId: null,
+      action: "budget.upsert",
+      oldValues: null,
+      newValues: {
+        budgetId: result.rows[0].id,
+        departmentId,
+        category: category || null,
+        periodMonth,
+        totalAmount,
+      },
+    });
+
+    await client.query("COMMIT");
+    return res.status(201).json({ budget: result.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return handleAdminDbError(res, error);
+  } finally {
+    client.release();
+  }
+};
+
+export const listBudgets = async (req, res) => {
+  const query = req.validated?.query || req.query || {};
+  const departmentId =
+    query.departmentId === undefined ? null : Number(query.departmentId);
+  const periodMonth = query.periodMonth
+    ? normalizePeriodMonth(query.periodMonth)
+    : null;
+
+  if (query.periodMonth && !periodMonth) {
+    return res.status(400).json({ message: "periodMonth must be in YYYY-MM format." });
+  }
+
+  const conditions = [];
+  const values = [];
+
+  if (departmentId) {
+    values.push(departmentId);
+    conditions.push(`b.department_id = $${values.length}`);
+  }
+
+  if (periodMonth) {
+    values.push(periodMonth);
+    conditions.push(`b.period_month = $${values.length}::date`);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT b.id, b.department_id, d.name AS department_name,
+             b.category, b.period_month, b.total_amount, b.used_amount,
+             (b.total_amount - b.used_amount)::numeric AS remaining_amount,
+             b.created_at, b.updated_at
+      FROM budgets b
+      JOIN departments d ON d.id = b.department_id
+      ${whereClause}
+      ORDER BY b.period_month DESC, d.name ASC, b.category ASC NULLS FIRST;
+      `,
+      values,
+    );
+
+    return res.json({ budgets: result.rows });
+  } catch (error) {
+    return handleAdminDbError(res, error);
+  }
+};
+
+export const getFinancialSummary = async (req, res) => {
+  try {
+    const budgetVsActualResult = await pool.query(
+      `
+      SELECT d.id AS department_id,
+             d.name AS department_name,
+             COALESCE(SUM(b.total_amount), 0)::numeric AS budget_total,
+             COALESCE(SUM(b.used_amount), 0)::numeric AS budget_used
+      FROM departments d
+      LEFT JOIN budgets b ON b.department_id = d.id
+      GROUP BY d.id, d.name
+      ORDER BY d.name ASC;
+      `,
+    );
+
+    const categoryCostResult = await pool.query(
+      `
+      SELECT i.category,
+             COUNT(*)::int AS issue_count,
+             COALESCE(SUM(i.final_cost), 0)::numeric AS total_final_cost,
+             COALESCE(AVG(i.final_cost), 0)::numeric AS avg_final_cost
+      FROM issues i
+      WHERE i.final_cost IS NOT NULL
+      GROUP BY i.category
+      ORDER BY total_final_cost DESC;
+      `,
+    );
+
+    const efficiencyResult = await pool.query(
+      `
+      SELECT i.id,
+             i.category,
+             i.final_cost,
+             i.created_at,
+             i.resolved_at,
+             ROUND(EXTRACT(EPOCH FROM (i.resolved_at - i.created_at)) / 3600.0, 2) AS resolution_hours
+      FROM issues i
+      WHERE i.status = 'resolved' AND i.final_cost IS NOT NULL AND i.resolved_at IS NOT NULL
+      ORDER BY i.resolved_at DESC
+      LIMIT 100;
+      `,
+    );
+
+    const anomalyResult = await pool.query(
+      `
+      WITH category_avg AS (
+        SELECT category, AVG(final_cost) AS avg_cost
+        FROM issues
+        WHERE final_cost IS NOT NULL
+        GROUP BY category
+      )
+      SELECT i.id, i.title, i.category, i.final_cost,
+             COALESCE(ca.avg_cost, 0)::numeric AS category_avg_cost,
+             iu.update_count
+      FROM issues i
+      LEFT JOIN category_avg ca ON ca.category = i.category
+      LEFT JOIN (
+        SELECT issue_id, COUNT(*)::int AS update_count
+        FROM issue_updates
+        GROUP BY issue_id
+      ) iu ON iu.issue_id = i.id
+      WHERE i.final_cost IS NOT NULL
+        AND (
+          (ca.avg_cost IS NOT NULL AND i.final_cost > (ca.avg_cost * 2))
+          OR COALESCE(iu.update_count, 0) >= 8
+        )
+      ORDER BY i.final_cost DESC NULLS LAST
+      LIMIT 20;
+      `,
+    );
+
+    const overallResult = await pool.query(
+      `
+      SELECT
+        COUNT(*)::int AS total_issues,
+        COUNT(*) FILTER (WHERE status = 'resolved')::int AS resolved_issues,
+        COALESCE(AVG(final_cost), 0)::numeric AS avg_cost_per_issue,
+        COALESCE(SUM(final_cost), 0)::numeric AS total_final_cost
+      FROM issues;
+      `,
+    );
+
+    const overBudget = budgetVsActualResult.rows.filter(
+      (row) => Number(row.budget_used) > Number(row.budget_total),
+    );
+
+    return res.json({
+      budgetVsActual: budgetVsActualResult.rows,
+      categoryCosts: categoryCostResult.rows,
+      efficiency: efficiencyResult.rows,
+      anomalies: anomalyResult.rows,
+      overBudget,
+      overall: overallResult.rows[0] || {
+        total_issues: 0,
+        resolved_issues: 0,
+        avg_cost_per_issue: 0,
+        total_final_cost: 0,
+      },
     });
   } catch (error) {
     return handleAdminDbError(res, error);

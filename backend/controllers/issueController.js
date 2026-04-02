@@ -13,12 +13,24 @@ const normalizeIssuePayload = (body) => {
   const description = String(body.description || "").trim();
   const category = String(body.category || "").trim();
   const photoUrl = body.photo_url ? String(body.photo_url).trim() : null;
+  const estimatedCost =
+    body.estimated_cost === null ||
+    body.estimated_cost === undefined ||
+    body.estimated_cost === ""
+      ? null
+      : Number(body.estimated_cost);
+  const budgetId =
+    body.budget_id === null || body.budget_id === undefined || body.budget_id === ""
+      ? null
+      : Number(body.budget_id);
 
   return {
     title,
     description,
     category,
     photoUrl: photoUrl || null,
+    estimatedCost,
+    budgetId,
     latitude: Number(body.latitude),
     longitude: Number(body.longitude),
   };
@@ -124,10 +136,14 @@ export const createIssue = async (req, res) => {
 
   try {
     const query = `
-      INSERT INTO issues (title, description, category, latitude, longitude, photo_url, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO issues (
+        title, description, category, latitude, longitude,
+        photo_url, created_by, estimated_cost, budget_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id, title, description, category, latitude, longitude, status,
-                created_by, assigned_department, photo_url, created_at, updated_at;
+                created_by, assigned_department, photo_url, estimated_cost,
+                final_cost, budget_id, resolved_at, created_at, updated_at;
     `;
 
     const values = [
@@ -138,6 +154,8 @@ export const createIssue = async (req, res) => {
       payload.longitude,
       payload.photoUrl,
       userId,
+      payload.estimatedCost,
+      payload.budgetId,
     ];
 
     const result = await pool.query(query, values);
@@ -156,7 +174,8 @@ export const getMyIssues = async (req, res) => {
   try {
     const query = `
       SELECT i.id, i.title, i.description, i.category, i.latitude, i.longitude,
-             i.status, i.photo_url, i.assigned_department, i.created_at, i.updated_at,
+              i.status, i.photo_url, i.assigned_department, i.estimated_cost,
+              i.final_cost, i.budget_id, i.resolved_at, i.created_at, i.updated_at,
              d.name AS assigned_department_name
       FROM issues i
       LEFT JOIN departments d ON d.id = i.assigned_department
@@ -228,7 +247,8 @@ export const getAllIssues = async (req, res) => {
     const query = `
       SELECT i.id, i.title, i.description, i.category, i.latitude, i.longitude,
              i.status, i.photo_url, i.created_by, i.assigned_department,
-             i.created_at, i.updated_at,
+              i.estimated_cost, i.final_cost, i.budget_id, i.resolved_at,
+              i.created_at, i.updated_at,
              d.name AS assigned_department_name,
              u.full_name AS created_by_name
       FROM issues i
@@ -275,7 +295,8 @@ export const getIssueDetails = async (req, res) => {
       `
       SELECT i.id, i.title, i.description, i.category, i.latitude, i.longitude,
              i.status, i.photo_url, i.created_by, i.assigned_department,
-             i.created_at, i.updated_at,
+              i.estimated_cost, i.final_cost, i.budget_id, i.resolved_at,
+              i.created_at, i.updated_at,
              d.name AS assigned_department_name,
              u.full_name AS created_by_name,
              u.cid AS created_by_cid
@@ -317,7 +338,8 @@ export const getIssueDetails = async (req, res) => {
 
     const updatesResult = await pool.query(
       `
-      SELECT iu.id, iu.issue_id, iu.message, iu.photo_url, iu.created_by, iu.created_at,
+            SELECT iu.id, iu.issue_id, iu.message, iu.photo_url, iu.cost_added,
+              iu.created_by, iu.created_at,
              u.full_name AS created_by_name,
              u.cid AS created_by_cid,
              u.role AS created_by_role
@@ -341,6 +363,16 @@ export const getIssueDetails = async (req, res) => {
 export const assignIssueToDepartment = async (req, res) => {
   const issueId = Number(req.params.id);
   const departmentId = Number(req.body.departmentId);
+  const estimatedCost =
+    req.body.estimatedCost === null ||
+    req.body.estimatedCost === undefined ||
+    req.body.estimatedCost === ""
+      ? null
+      : Number(req.body.estimatedCost);
+  const budgetId =
+    req.body.budgetId === null || req.body.budgetId === undefined || req.body.budgetId === ""
+      ? null
+      : Number(req.body.budgetId);
 
   if (!Number.isInteger(issueId) || issueId <= 0) {
     return res.status(400).json({ message: "Invalid issue id." });
@@ -350,6 +382,15 @@ export const assignIssueToDepartment = async (req, res) => {
     return res
       .status(400)
       .json({ message: "departmentId must be a positive integer." });
+  }
+
+  if (
+    estimatedCost !== null &&
+    (!Number.isFinite(estimatedCost) || estimatedCost < 0)
+  ) {
+    return res.status(400).json({
+      message: "estimatedCost must be a non-negative number.",
+    });
   }
 
   const client = await pool.connect();
@@ -366,20 +407,108 @@ export const assignIssueToDepartment = async (req, res) => {
       return res.status(404).json({ message: "Department not found." });
     }
 
-    const issueResult = await client.query(
+    const existingIssueResult = await client.query(
       `
-      UPDATE issues
-      SET assigned_department = $1, updated_at = NOW()
-      WHERE id = $2
-      RETURNING id, title, status, assigned_department, updated_at;
+      SELECT id, assigned_department, budget_id, estimated_cost, final_cost
+      FROM issues
+      WHERE id = $1
+      LIMIT 1
+      FOR UPDATE;
       `,
-      [departmentId, issueId],
+      [issueId],
     );
 
-    if (issueResult.rowCount === 0) {
+    if (!existingIssueResult.rowCount) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Issue not found." });
     }
+
+    const existingIssue = existingIssueResult.rows[0];
+    const nextBudgetId = budgetId !== null ? budgetId : existingIssue.budget_id;
+    const nextEstimatedCost =
+      estimatedCost !== null ? estimatedCost : existingIssue.estimated_cost;
+
+    if (nextBudgetId !== null) {
+      const budgetResult = await client.query(
+        `
+        SELECT id
+        FROM budgets
+        WHERE id = $1 AND department_id = $2
+        LIMIT 1;
+        `,
+        [nextBudgetId, departmentId],
+      );
+      if (!budgetResult.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "budgetId is invalid for the selected department.",
+        });
+      }
+    }
+
+    const currentReservedCost = Number(
+      existingIssue.final_cost ?? existingIssue.estimated_cost ?? 0,
+    );
+    const nextReservedCost = Number(
+      existingIssue.final_cost ?? nextEstimatedCost ?? 0,
+    );
+    const currentBudgetId = existingIssue.budget_id
+      ? Number(existingIssue.budget_id)
+      : null;
+    const nextBudgetIdNumber = nextBudgetId ? Number(nextBudgetId) : null;
+
+    if (currentBudgetId && nextBudgetIdNumber && currentBudgetId === nextBudgetIdNumber) {
+      const delta = nextReservedCost - currentReservedCost;
+      if (delta !== 0) {
+        await client.query(
+          `
+          UPDATE budgets
+          SET used_amount = GREATEST(used_amount + $1, 0),
+              updated_at = NOW()
+          WHERE id = $2;
+          `,
+          [delta, currentBudgetId],
+        );
+      }
+    } else {
+      if (currentBudgetId && currentReservedCost > 0) {
+        await client.query(
+          `
+          UPDATE budgets
+          SET used_amount = GREATEST(used_amount - $1, 0),
+              updated_at = NOW()
+          WHERE id = $2;
+          `,
+          [currentReservedCost, currentBudgetId],
+        );
+      }
+
+      if (nextBudgetIdNumber && nextReservedCost > 0) {
+        await client.query(
+          `
+          UPDATE budgets
+          SET used_amount = used_amount + $1,
+              updated_at = NOW()
+          WHERE id = $2;
+          `,
+          [nextReservedCost, nextBudgetIdNumber],
+        );
+      }
+    }
+
+    const issueResult = await client.query(
+      `
+      UPDATE issues
+      SET assigned_department = $1,
+          estimated_cost = $2,
+          budget_id = $3,
+          updated_at = NOW()
+      WHERE id = $4
+      RETURNING id, title, status, assigned_department, estimated_cost,
+                budget_id, updated_at;
+      `,
+      [departmentId, nextEstimatedCost, nextBudgetId, issueId],
+    );
 
     await client.query("COMMIT");
     return res.json({ issue: issueResult.rows[0] });
@@ -395,6 +524,12 @@ export const updateIssueStatus = async (req, res) => {
   const issueId = Number(req.params.id);
   const status = String(req.body.status || "").trim();
   const message = req.body.message ? String(req.body.message).trim() : null;
+  const costAdded =
+    req.body.cost_added === null ||
+    req.body.cost_added === undefined ||
+    req.body.cost_added === ""
+      ? 0
+      : Number(req.body.cost_added);
   const photoUrl = req.body.photo_url
     ? String(req.body.photo_url).trim()
     : null;
@@ -414,6 +549,12 @@ export const updateIssueStatus = async (req, res) => {
     });
   }
 
+  if (!Number.isFinite(costAdded) || costAdded < 0) {
+    return res.status(400).json({
+      message: "cost_added must be a non-negative number.",
+    });
+  }
+
   const client = await pool.connect();
 
   try {
@@ -424,7 +565,8 @@ export const updateIssueStatus = async (req, res) => {
       UPDATE issues
       SET status = $1, updated_at = NOW()
       WHERE id = $2
-      RETURNING id, title, status, assigned_department, updated_at;
+      RETURNING id, title, status, assigned_department, budget_id,
+                estimated_cost, final_cost, resolved_at, updated_at;
       `,
       [status, issueId],
     );
@@ -437,11 +579,55 @@ export const updateIssueStatus = async (req, res) => {
     const updateMessage = message || `Status changed to ${status}`;
     await client.query(
       `
-      INSERT INTO issue_updates (issue_id, message, created_by, photo_url)
-      VALUES ($1, $2, $3, $4);
+      INSERT INTO issue_updates (issue_id, message, created_by, photo_url, cost_added)
+      VALUES ($1, $2, $3, $4, $5);
       `,
-      [issueId, updateMessage, actorId, photoUrl],
+      [issueId, updateMessage, actorId, photoUrl, costAdded || null],
     );
+
+    if (status === "resolved") {
+      const costResult = await client.query(
+        `
+        SELECT COALESCE(SUM(cost_added), 0)::numeric AS total_cost
+        FROM issue_updates
+        WHERE issue_id = $1;
+        `,
+        [issueId],
+      );
+      const finalCost = Number(costResult.rows[0]?.total_cost || 0);
+      const priorAccountedCost = Number(
+        issueResult.rows[0].final_cost ?? issueResult.rows[0].estimated_cost ?? 0,
+      );
+      const budgetDelta = finalCost - priorAccountedCost;
+
+      if (issueResult.rows[0].budget_id && budgetDelta !== 0) {
+        await client.query(
+          `
+          UPDATE budgets
+          SET used_amount = GREATEST(used_amount + $1, 0),
+              updated_at = NOW()
+          WHERE id = $2;
+          `,
+          [budgetDelta, issueResult.rows[0].budget_id],
+        );
+      }
+
+      const finalIssueResult = await client.query(
+        `
+        UPDATE issues
+        SET final_cost = $1,
+            resolved_at = COALESCE(resolved_at, NOW()),
+            updated_at = NOW()
+        WHERE id = $2
+        RETURNING id, title, status, assigned_department, budget_id,
+                  estimated_cost, final_cost, resolved_at, updated_at;
+        `,
+        [finalCost, issueId],
+      );
+
+      await client.query("COMMIT");
+      return res.json({ issue: finalIssueResult.rows[0] });
+    }
 
     await client.query("COMMIT");
     return res.json({ issue: issueResult.rows[0] });

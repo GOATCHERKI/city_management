@@ -9,7 +9,7 @@ export const ROLE_NAV_ITEMS = {
   admin: [
     { id: "admin-dashboard", label: "Dashboard" },
     { id: "admin-issues", label: "All Issues" },
-    { id: "admin-assign", label: "Assign Department" },
+    { id: "admin-assign", label: "Departments & Budgets" },
     { id: "admin-users", label: "User Management" },
     { id: "admin-audit", label: "Audit Logs" },
   ],
@@ -18,4 +18,3 @@ export const ROLE_NAV_ITEMS = {
     { id: "staff-update", label: "Update Status" },
   ],
 };
-

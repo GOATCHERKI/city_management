@@ -32,6 +32,8 @@ export const createIssueSchema = z.object({
     .url("photo_url must be a valid URL")
     .optional()
     .or(z.literal("")),
+  estimated_cost: z.coerce.number().min(0).optional(),
+  budget_id: z.coerce.number().int().positive().optional(),
 });
 
 export const listIssuesQuerySchema = z.object({
@@ -44,13 +46,26 @@ export const issueIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
-export const assignIssueSchema = z.object({
-  departmentId: z.coerce.number().int().positive(),
-});
+export const assignIssueSchema = z
+  .object({
+    departmentId: z.coerce.number().int().positive(),
+    estimatedCost: z.coerce.number().min(0).optional(),
+    budgetId: z.coerce.number().int().positive().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.budgetId && value.estimatedCost === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["estimatedCost"],
+        message: "estimatedCost is required when budgetId is provided",
+      });
+    }
+  });
 
 export const updateIssueStatusSchema = z.object({
   status: statusEnum,
   message: z.string().trim().max(2000).optional(),
+  cost_added: z.coerce.number().min(0).optional(),
   photo_url: z
     .string()
     .trim()
