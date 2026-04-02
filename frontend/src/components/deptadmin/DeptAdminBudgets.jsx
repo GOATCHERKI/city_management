@@ -139,7 +139,17 @@ function DeptAdminBudgets({ token, departmentId, onBudgetUpdated }) {
             />
           </label>
 
-          <button className="solid-btn" disabled={budgetSaving}>
+          <button
+            className="solid-btn"
+            disabled={budgetSaving}
+            style={{
+              padding: "0.55rem 0.95rem",
+              fontSize: "0.95rem",
+              width: "fit-content",
+              justifySelf: "start",
+              alignSelf: "end",
+            }}
+          >
             {budgetSaving ? "Saving..." : "Save Budget"}
           </button>
         </form>
