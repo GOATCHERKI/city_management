@@ -1358,6 +1358,69 @@ h4 {
     max-width: 100%;
 }
 
+.issues-export-panel {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 12px;
+}
+
+.issues-export-panel__head {
+    margin-bottom: 10px;
+}
+
+.issues-export-panel__head h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.issues-export-panel__head p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+.issues-export-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    align-items: end;
+}
+
+.issues-export-panel__grid label {
+    display: grid;
+    gap: 6px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.issues-export-panel__grid select {
+    min-width: 0;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 11px;
+    font: inherit;
+    color: var(--ink);
+    background: #ffffff;
+}
+
+.issues-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.issues-pagination__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .all-issues-map-card {
     border: 1px solid var(--line);
     border-radius: 12px;
@@ -1599,6 +1662,15 @@ h4 {
 
     .issue-photo {
         max-height: 180px;
+    }
+
+    .issues-export-panel__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .issues-pagination__actions {
+        width: 100%;
+        justify-content: space-between;
     }
 
     .table-wrap table {
