@@ -124,7 +124,8 @@ export const loginUser = async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT id, cid, full_name, email, password_hash, role, is_email_verified
+      SELECT id, cid, full_name, email, password_hash, role, is_email_verified,
+             department_id
       FROM users
       WHERE cid = $1
       LIMIT 1;
@@ -155,6 +156,8 @@ export const loginUser = async (req, res) => {
         fullName: user.full_name,
         email: user.email,
         role: user.role,
+        departmentId: user.department_id,
+        department_id: user.department_id,
       },
     });
   } catch (error) {

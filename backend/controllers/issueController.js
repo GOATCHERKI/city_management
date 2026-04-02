@@ -200,7 +200,7 @@ export const getAllIssues = async (req, res) => {
   const conditions = [];
   const values = [];
 
-  if (requesterRole === "staff") {
+  if (requesterRole === "staff" || requesterRole === "dept_admin") {
     if (!Number.isInteger(requesterId) || requesterId <= 0) {
       return res.status(401).json({ message: "Invalid auth token payload." });
     }
@@ -317,7 +317,7 @@ export const getIssueDetails = async (req, res) => {
 
     const issue = issueResult.rows[0];
 
-    if (requesterRole === "staff") {
+    if (requesterRole === "staff" || requesterRole === "dept_admin") {
       if (!Number.isInteger(requesterId) || requesterId <= 0) {
         return res.status(401).json({ message: "Invalid auth token payload." });
       }

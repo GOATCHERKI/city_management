@@ -136,7 +136,15 @@ function App() {
                 />
               ) : null}
 
-              {!role || !["citizen", "admin", "staff"].includes(role) ? (
+              {role === "dept_admin" ? (
+                <DeptAdminWorkspace
+                  token={token}
+                  user={user}
+                  activeTab={effectiveActiveTab}
+                />
+              ) : null}
+
+              {!role || !["citizen", "admin", "staff", "dept_admin"].includes(role) ? (
                 <p className="info-box">Unknown role: {String(role || "none")}</p>
               ) : null}
             </section>
@@ -1021,6 +1029,784 @@ function StaffWorkspace({ token, activeTab, onTabChange }) {
         />
       ) : (
         <AllIssues token={token} refreshKey={refreshKey} canAssign={false} />
+      )}
+    </section>
+  );
+}
+
+function DeptAdminWorkspace({ token, user, activeTab }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const departmentId = user?.department_id ?? user?.departmentId;
+
+  if (!departmentId) {
+    return <p className="info-box">Department not assigned to your account.</p>;
+  }
+
+  return (
+    <section className="workspace">
+      {activeTab === "dept-dashboard" ? (
+        <DeptAdminDashboard token={token} departmentId={departmentId} />
+      ) : activeTab === "dept-issues" ? (
+        <DeptAdminIssues token={token} departmentId={departmentId} refreshKey={refreshKey} />
+      ) : activeTab === "dept-budgets" ? (
+        <DeptAdminBudgets
+          token={token}
+          departmentId={departmentId}
+          onBudgetUpdated={() => {
+            setRefreshKey((prev) => prev + 1);
+          }}
+        />
+      ) : activeTab === "dept-staff" ? (
+        <DeptAdminStaff token={token} departmentId={departmentId} />
+      ) : null}
+    </section>
+  );
+}
+
+function DeptAdminDashboard({ token, departmentId }) {
+  const [issues, setIssues] = useState([]);
+  const [budgets, setBudgets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+
+  const currency = useMemo(
+    () =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      setLoading(true);
+      setFeedback("");
+      try {
+        const [issuesResult, budgetsResult] = await Promise.all([
+          apiRequest({ path: `/issues?department=${departmentId}`, token }),
+          apiRequest({ path: `/admin/budgets`, token }),
+        ]);
+
+        if (mounted) {
+          setIssues(issuesResult.issues || []);
+          const deptBudgets = (budgetsResult.budgets || []).filter(
+            (b) => Number(b.department_id) === Number(departmentId),
+          );
+          setBudgets(deptBudgets);
+        }
+      } catch (error) {
+        if (mounted) setFeedback(error.message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+  }, [departmentId, token]);
+
+  const totals = useMemo(() => {
+    const pending = issues.filter((i) => i.status === "pending").length;
+    const inProgress = issues.filter((i) => i.status === "in_progress").length;
+    const resolved = issues.filter((i) => i.status === "resolved").length;
+    const total = issues.length;
+    const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
+
+    return { total, pending, inProgress, resolved, resolutionRate };
+  }, [issues]);
+
+  const financialMetrics = useMemo(() => {
+    const totalEstimated = issues.reduce((sum, issue) => {
+      return sum + (Number(issue.estimated_cost) || 0);
+    }, 0);
+
+    const totalFinal = issues.reduce((sum, issue) => {
+      return sum + (Number(issue.final_cost) || 0);
+    }, 0);
+
+    const budgetTotal = budgets.reduce((sum, b) => {
+      return sum + (Number(b.total_amount) || 0);
+    }, 0);
+
+    const budgetUsed = budgets.reduce(
+      (sum, b) => sum + (Number(b.used_amount) || 0),
+      0,
+    );
+
+    return {
+      totalEstimated,
+      totalFinal,
+      budgetTotal,
+      budgetUsed,
+      budgetRemaining: budgetTotal - budgetUsed,
+    };
+  }, [issues, budgets]);
+
+  if (loading) return <p className="info-box">Loading department dashboard...</p>;
+  if (feedback) return <p className="info-box">{feedback}</p>;
+
+  return (
+    <section className="admin-dashboard-v2">
+      <header className="admin-dashboard-v2__head">
+        <h2>Department Dashboard</h2>
+        <p>Overview of your department&apos;s issues, budget, and workload</p>
+      </header>
+
+      <section className="admin-tile-grid">
+        <article className="admin-tile admin-tile--kpi">
+          <div className="admin-tile__head">
+            <h3>Total Issues</h3>
+            <span className="admin-chip">Assigned</span>
+          </div>
+          <p className="admin-tile__big">{totals.total}</p>
+          <p className="admin-tile__meta">Your department workload</p>
+        </article>
+
+        <article className="admin-tile admin-tile--kpi">
+          <div className="admin-tile__head">
+            <h3>Resolution Rate</h3>
+            <span className="admin-chip">Efficiency</span>
+          </div>
+          <p className="admin-tile__big">{totals.resolutionRate}%</p>
+          <p className="admin-tile__meta">
+            {totals.resolved} of {totals.total} resolved
+          </p>
+        </article>
+
+        <article className="admin-tile admin-tile--kpi">
+          <div className="admin-tile__head">
+            <h3>Budget Status</h3>
+            <span
+              className={
+                financialMetrics.budgetRemaining < 0
+                  ? "admin-chip admin-chip--warn"
+                  : "admin-chip admin-chip--ok"
+              }
+            >
+              {financialMetrics.budgetRemaining < 0 ? "Over" : "Healthy"}
+            </span>
+          </div>
+          <p className="admin-tile__big">
+            {currency.format(financialMetrics.budgetRemaining)}
+          </p>
+          <p className="admin-tile__meta">Remaining budget</p>
+        </article>
+
+        <article className="admin-tile admin-tile--metrics">
+          <div className="admin-tile__head">
+            <h3>Status Breakdown</h3>
+            <span className="admin-chip">Quick Stats</span>
+          </div>
+          <div className="admin-metric-list">
+            <div>
+              <span>Pending</span>
+              <strong>{totals.pending}</strong>
+            </div>
+            <div>
+              <span>In Progress</span>
+              <strong>{totals.inProgress}</strong>
+            </div>
+            <div>
+              <span>Resolved</span>
+              <strong>{totals.resolved}</strong>
+            </div>
+            <div>
+              <span>Total Issues</span>
+              <strong>{totals.total}</strong>
+            </div>
+          </div>
+        </article>
+
+        <article className="admin-tile admin-tile--metrics">
+          <div className="admin-tile__head">
+            <h3>Financial Summary</h3>
+            <span className="admin-chip">Costs</span>
+          </div>
+          <div className="admin-metric-list">
+            <div>
+              <span>Total Budget</span>
+              <strong>{currency.format(financialMetrics.budgetTotal)}</strong>
+            </div>
+            <div>
+              <span>Budget Used</span>
+              <strong>{currency.format(financialMetrics.budgetUsed)}</strong>
+            </div>
+            <div>
+              <span>Est. Total Cost</span>
+              <strong>{currency.format(financialMetrics.totalEstimated)}</strong>
+            </div>
+            <div>
+              <span>Actual Total Cost</span>
+              <strong>{currency.format(financialMetrics.totalFinal)}</strong>
+            </div>
+          </div>
+        </article>
+
+        <article className="admin-tile admin-tile--table">
+          <div className="admin-tile__head">
+            <h3>Recent Issues</h3>
+            <span className="admin-chip">Latest</span>
+          </div>
+          {!issues.length ? (
+            <p className="info-box">No issues assigned to your department.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Issue</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {issues.slice(0, 8).map((issue) => (
+                    <tr key={issue.id}>
+                      <td>{new Date(issue.created_at).toLocaleString()}</td>
+                      <td>
+                        #{issue.id} {issue.title}
+                      </td>
+                      <td>{CATEGORY_LABELS[issue.category] || issue.category}</td>
+                      <td>{STATUS_LABELS[issue.status] || issue.status}</td>
+                      <td>
+                        {issue.final_cost != null
+                          ? currency.format(Number(issue.final_cost || 0))
+                          : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+      </section>
+    </section>
+  );
+}
+
+function DeptAdminIssues({ token, departmentId, refreshKey }) {
+  const [issues, setIssues] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedIssueId, setSelectedIssueId] = useState(null);
+  const [selectedIssueDetails, setSelectedIssueDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState("");
+
+  const mappedIssues = useMemo(() => {
+    return issues
+      .map((item) => {
+        const lat = Number(item.latitude);
+        const lng = Number(item.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return {
+          ...item,
+          lat,
+          lng,
+        };
+      })
+      .filter(Boolean);
+  }, [issues]);
+
+  const mapCenter = useMemo(() => {
+    if (!mappedIssues.length) return ISTANBUL_CENTER;
+    const sum = mappedIssues.reduce(
+      (acc, item) => ({ lat: acc.lat + item.lat, lng: acc.lng + item.lng }),
+      { lat: 0, lng: 0 },
+    );
+    return [sum.lat / mappedIssues.length, sum.lng / mappedIssues.length];
+  }, [mappedIssues]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const result = await apiRequest({
+          path: `/issues?department=${departmentId}`,
+          token,
+        });
+        if (mounted) {
+          setIssues(result.issues || []);
+        }
+      } catch (fetchError) {
+        if (mounted) setError(fetchError.message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+  }, [refreshKey, departmentId, token]);
+
+  const openIssueDetails = async (issueId) => {
+    if (selectedIssueId === issueId) {
+      setSelectedIssueId(null);
+      setSelectedIssueDetails(null);
+      setDetailsError("");
+      return;
+    }
+
+    setSelectedIssueId(issueId);
+    setDetailsLoading(true);
+    setDetailsError("");
+    try {
+      const result = await apiRequest({ path: `/issues/${issueId}`, token });
+      setSelectedIssueDetails(result);
+    } catch (fetchError) {
+      setDetailsError(fetchError.message);
+      setSelectedIssueDetails(null);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const closeIssueDetails = () => {
+    setSelectedIssueId(null);
+    setSelectedIssueDetails(null);
+    setDetailsError("");
+    setDetailsLoading(false);
+  };
+
+  if (loading) return <p className="info-box">Loading department issues...</p>;
+  if (error) return <p className="info-box">{error}</p>;
+  if (!issues.length)
+    return (
+      <p className="info-box">No issues assigned to your department.</p>
+    );
+
+  return (
+    <section className="all-issues-layout">
+      {mappedIssues.length ? (
+        <section className="all-issues-map-card" aria-label="Department issues map">
+          <div className="all-issues-map-head">
+            <h3>Department Issues Map</h3>
+            <p>{mappedIssues.length} mapped issues</p>
+          </div>
+          <MapContainer
+            key={`dept-issues-map-${mappedIssues.length}`}
+            center={mapCenter}
+            zoom={11}
+            scrollWheelZoom
+            className="all-issues-map"
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {mappedIssues.map((item) => (
+              <Marker key={item.id} position={[item.lat, item.lng]} icon={issueMarkerIcon}>
+                <Popup>
+                  <strong>#{item.id} {item.title}</strong>
+                  <br />
+                  Status: {item.status}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </section>
+      ) : null}
+
+      <div className="report-list">
+        {issues.map((item) => (
+          <article
+            className="report-card report-card--clickable"
+            key={item.id}
+            onClick={() => openIssueDetails(item.id)}
+          >
+            <div className="report-head">
+              <h3>#{item.id} {item.title}</h3>
+              <span className={STATUS_CLASS[item.status] || "status"}>
+                {item.status}
+              </span>
+            </div>
+            <p>{item.description}</p>
+            <div className="meta-row">
+              <span>Category: {item.category}</span>
+              <span>Created: {new Date(item.created_at).toLocaleDateString()}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {selectedIssueId ? (
+        <section className="issue-modal-overlay" onClick={closeIssueDetails} role="presentation">
+          <article
+            className="issue-modal-card"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Issue details"
+          >
+            <div className="issue-modal-head">
+              <h4>Issue Details #{selectedIssueId}</h4>
+              <button type="button" className="ghost-btn" onClick={closeIssueDetails}>
+                Close
+              </button>
+            </div>
+
+            {detailsLoading ? <p className="info-box">Loading details...</p> : null}
+            {detailsError ? <p className="info-box">{detailsError}</p> : null}
+
+            {!detailsLoading && !detailsError && selectedIssueDetails?.issue ? (
+              <>
+                <div className="meta-row">
+                  <span>Status: {selectedIssueDetails.issue.status}</span>
+                  <span>
+                    Creator: {selectedIssueDetails.issue.created_by_name || "N/A"}
+                  </span>
+                </div>
+
+                <div className="meta-row">
+                  <span>
+                    Estimated Cost:{" "}
+                    {selectedIssueDetails.issue.estimated_cost != null
+                      ? `$${Number(selectedIssueDetails.issue.estimated_cost).toFixed(2)}`
+                      : "-"}
+                  </span>
+                  <span>
+                    Final Cost:{" "}
+                    {selectedIssueDetails.issue.final_cost != null
+                      ? `$${Number(selectedIssueDetails.issue.final_cost).toFixed(2)}`
+                      : "-"}
+                  </span>
+                </div>
+
+                <p className="issue-detail-text">
+                  {selectedIssueDetails.issue.description || "No description."}
+                </p>
+
+                <div className="issue-detail-block">
+                  <h5>Photo</h5>
+                  {selectedIssueDetails.issue.photo_url ? (
+                    <a
+                      href={selectedIssueDetails.issue.photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="photo-link"
+                    >
+                      Open photo
+                    </a>
+                  ) : (
+                    <p className="info-box">No photo uploaded.</p>
+                  )}
+                </div>
+
+                <div className="issue-detail-block">
+                  <h5>Updates ({selectedIssueDetails.updates?.length || 0})</h5>
+                  {selectedIssueDetails.updates?.length ? (
+                    <ul className="issue-updates-list">
+                      {selectedIssueDetails.updates.map((update) => (
+                        <li key={update.id} className="issue-update-item">
+                          <div className="meta-row">
+                            <span>
+                              {update.created_by_name ||
+                                update.created_by_cid ||
+                                `User ${update.created_by}`}
+                            </span>
+                            <span>
+                              {new Date(update.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="issue-detail-text">{update.message}</p>
+                          {update.cost_added != null ? (
+                            <p className="issue-cost-pill">
+                              Cost: ${Number(update.cost_added).toFixed(2)}
+                            </p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="info-box">No updates yet.</p>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </article>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function DeptAdminBudgets({ token, departmentId, onBudgetUpdated }) {
+  const [budgets, setBudgets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+  const [budgetFeedback, setBudgetFeedback] = useState("");
+  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [newBudget, setNewBudget] = useState({
+    category: "",
+    periodMonth: new Date().toISOString().slice(0, 7),
+    totalAmount: "",
+  });
+
+  const currency = useMemo(
+    () =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 2,
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      setLoading(true);
+      setFeedback("");
+      try {
+        const result = await apiRequest({ path: "/admin/budgets", token });
+        if (mounted) {
+          const deptBudgets = (result.budgets || []).filter(
+            (b) => Number(b.department_id) === Number(departmentId),
+          );
+          setBudgets(deptBudgets);
+        }
+      } catch (error) {
+        if (mounted) setFeedback(error.message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+  }, [departmentId, token]);
+
+  const submitCreateBudget = async (event) => {
+    event.preventDefault();
+    setBudgetSaving(true);
+    setBudgetFeedback("");
+    try {
+      await apiRequest({
+        path: "/admin/budgets",
+        method: "POST",
+        token,
+        body: {
+          departmentId: Number(departmentId),
+          category: newBudget.category || null,
+          periodMonth: newBudget.periodMonth,
+          totalAmount: Number(newBudget.totalAmount),
+        },
+      });
+      setBudgetFeedback("Budget saved successfully.");
+      setNewBudget({
+        category: "",
+        periodMonth: new Date().toISOString().slice(0, 7),
+        totalAmount: "",
+      });
+      onBudgetUpdated();
+      const result = await apiRequest({ path: "/admin/budgets", token });
+      const deptBudgets = (result.budgets || []).filter(
+        (b) => Number(b.department_id) === Number(departmentId),
+      );
+      setBudgets(deptBudgets);
+    } catch (error) {
+      setBudgetFeedback(error.message);
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
+
+  if (loading) return <p className="info-box">Loading budgets...</p>;
+
+  return (
+    <section className="form-and-list">
+      <article className="card-box">
+        <h3>Create/Update Budget</h3>
+        <p className="hint">
+          Create or update a budget for your department (per category, per month).
+        </p>
+
+        <form className="form-grid" onSubmit={submitCreateBudget}>
+          <label>
+            Category (optional)
+            <input
+              type="text"
+              value={newBudget.category}
+              onChange={(event) =>
+                setNewBudget((prev) => ({
+                  ...prev,
+                  category: event.target.value,
+                }))
+              }
+              placeholder="e.g., water_leak, pothole"
+            />
+          </label>
+
+          <label>
+            Period (Month)
+            <input
+              type="month"
+              value={newBudget.periodMonth}
+              onChange={(event) =>
+                setNewBudget((prev) => ({
+                  ...prev,
+                  periodMonth: event.target.value,
+                }))
+              }
+            />
+          </label>
+
+          <label>
+            Total Amount ($)
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newBudget.totalAmount}
+              onChange={(event) =>
+                setNewBudget((prev) => ({
+                  ...prev,
+                  totalAmount: event.target.value,
+                }))
+              }
+              required
+            />
+          </label>
+
+          <button className="solid-btn" disabled={budgetSaving}>
+            {budgetSaving ? "Saving..." : "Save Budget"}
+          </button>
+        </form>
+
+        {budgetFeedback ? <p className="feedback">{budgetFeedback}</p> : null}
+      </article>
+
+      <article className="card-box">
+        <h3>Department Budgets</h3>
+        {feedback ? <p className="feedback">{feedback}</p> : null}
+
+        {!budgets.length ? (
+          <p className="info-box">No budgets yet for your department.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Period</th>
+                  <th>Total</th>
+                  <th>Used</th>
+                  <th>Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgets.map((budget) => {
+                  const total = Number(budget.total_amount || 0);
+                  const used = Number(budget.used_amount || 0);
+                  const remaining = total - used;
+                  return (
+                    <tr key={budget.id}>
+                      <td>{budget.category || "(All)"}</td>
+                      <td>
+                        {new Date(budget.period_month || Date.now()).toLocaleDateString(
+                          undefined,
+                          { year: "numeric", month: "short" },
+                        )}
+                      </td>
+                      <td>{currency.format(total)}</td>
+                      <td>{currency.format(used)}</td>
+                      <td
+                        style={{
+                          color: remaining < 0 ? "#dc2626" : "#16a34a",
+                          fontWeight: "700",
+                        }}
+                      >
+                        {currency.format(remaining)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+    </section>
+  );
+}
+
+function DeptAdminStaff({ token, departmentId }) {
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      setLoading(true);
+      setFeedback("");
+      try {
+        const result = await apiRequest({ path: "/admin/users", token });
+        if (mounted) {
+          const deptStaff = (result.users || []).filter(
+            (u) =>
+              Number(u.department_id) === Number(departmentId) &&
+              (u.role === "staff" || u.role === "dept_admin"),
+          );
+          setStaff(deptStaff);
+        }
+      } catch (error) {
+        if (mounted) setFeedback(error.message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+  }, [departmentId, token]);
+
+  if (loading) return <p className="info-box">Loading staff...</p>;
+
+  return (
+    <section className="card-box">
+      <h3>Department Staff</h3>
+      <p className="hint">Staff members assigned to your department.</p>
+
+      {feedback ? <p className="feedback">{feedback}</p> : null}
+
+      {!staff.length ? (
+        <p className="info-box">No staff assigned to your department.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>CID</th>
+                <th>Email</th>
+                <th>Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {staff.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.full_name}</td>
+                  <td>{user.cid}</td>
+                  <td>{user.email}</td>
+                  <td>
+                    <span className={`status status-${user.role === "staff" ? "progress" : "pending"}`}>
+                      {user.role}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -2165,7 +2951,7 @@ function AdminUserManagement({ token }) {
           email: newUser.email,
           password: newUser.password,
           role: newUser.role,
-          departmentId: newUser.role === "staff" ? Number(newUser.departmentId) : null,
+          departmentId: (newUser.role === "staff" || newUser.role === "dept_admin") ? Number(newUser.departmentId) : null,
         },
       });
       setFeedback("User created successfully.");
@@ -2193,7 +2979,7 @@ function AdminUserManagement({ token }) {
         token,
         body: {
           role: roleUpdate.role,
-          departmentId: roleUpdate.role === "staff" ? Number(roleUpdate.departmentId) : null,
+          departmentId: (roleUpdate.role === "staff" || roleUpdate.role === "dept_admin") ? Number(roleUpdate.departmentId) : null,
         },
       });
       setFeedback("User role updated.");
@@ -2247,27 +3033,38 @@ function AdminUserManagement({ token }) {
           Role
           <select
             value={newUser.role}
-            onChange={(e) => setNewUser((prev) => ({ ...prev, role: e.target.value }))}
+            onChange={(e) => {
+              const newRole = e.target.value;
+              setNewUser((prev) => ({
+                ...prev,
+                role: newRole,
+                departmentId: (newRole === "staff" || newRole === "dept_admin") ? prev.departmentId : "",
+              }));
+            }}
           >
             <option value="citizen">Citizen</option>
             <option value="staff">Staff</option>
+            <option value="dept_admin">Department Admin</option>
             <option value="admin">Admin</option>
           </select>
         </label>
-        <label>
-          Department (for staff)
-          <select
-            value={newUser.departmentId}
-            onChange={(e) => setNewUser((prev) => ({ ...prev, departmentId: e.target.value }))}
-          >
-            <option value="">Select department</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {(newUser.role === "staff" || newUser.role === "dept_admin") ? (
+          <label>
+            Department
+            <select
+              value={newUser.departmentId}
+              onChange={(e) => setNewUser((prev) => ({ ...prev, departmentId: e.target.value }))}
+              required
+            >
+              <option value="">Select department</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button className="solid-btn">Create User</button>
       </form>
 
@@ -2292,27 +3089,38 @@ function AdminUserManagement({ token }) {
           New Role
           <select
             value={roleUpdate.role}
-            onChange={(e) => setRoleUpdate((prev) => ({ ...prev, role: e.target.value }))}
+            onChange={(e) => {
+              const newRole = e.target.value;
+              setRoleUpdate((prev) => ({
+                ...prev,
+                role: newRole,
+                departmentId: (newRole === "staff" || newRole === "dept_admin") ? prev.departmentId : "",
+              }));
+            }}
           >
             <option value="citizen">Citizen</option>
             <option value="staff">Staff</option>
+            <option value="dept_admin">Department Admin</option>
             <option value="admin">Admin</option>
           </select>
         </label>
-        <label>
-          Department (staff)
-          <select
-            value={roleUpdate.departmentId}
-            onChange={(e) => setRoleUpdate((prev) => ({ ...prev, departmentId: e.target.value }))}
-          >
-            <option value="">Select department</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {(roleUpdate.role === "staff" || roleUpdate.role === "dept_admin") ? (
+          <label>
+            Department
+            <select
+              value={roleUpdate.departmentId}
+              onChange={(e) => setRoleUpdate((prev) => ({ ...prev, departmentId: e.target.value }))}
+              required
+            >
+              <option value="">Select department</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button className="solid-btn user-role-update-btn">Update Role</button>
       </form>
 

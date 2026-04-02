@@ -17,4 +17,10 @@ export const ROLE_NAV_ITEMS = {
     { id: "staff-issues", label: "Assigned Issues" },
     { id: "staff-update", label: "Update Status" },
   ],
+  dept_admin: [
+    { id: "dept-dashboard", label: "Department Dashboard" },
+    { id: "dept-issues", label: "Department Issues" },
+    { id: "dept-budgets", label: "Department Budgets" },
+    { id: "dept-staff", label: "Department Staff" },
+  ],
 };

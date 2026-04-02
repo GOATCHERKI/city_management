@@ -49,7 +49,7 @@ router.post(
 router.get(
   "/departments",
   verifyToken,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "dept_admin"),
   getDepartments,
 );
 
@@ -64,14 +64,14 @@ router.get("/my", verifyToken, authorizeRoles("citizen"), getMyIssues);
 router.get(
   "/",
   verifyToken,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "dept_admin"),
   validateRequest({ querySchema: listIssuesQuerySchema }),
   getAllIssues,
 );
 router.get(
   "/:id",
   verifyToken,
-  authorizeRoles("citizen", "staff", "admin"),
+  authorizeRoles("citizen", "staff", "admin", "dept_admin"),
   validateRequest({ paramsSchema: issueIdParamSchema }),
   getIssueDetails,
 );

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const roleEnum = z.enum(["citizen", "admin", "staff"]);
+const roleEnum = z.enum(["citizen", "admin", "staff", "dept_admin"]);
 
 const nullableDepartmentIdSchema = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) {
@@ -20,11 +20,15 @@ export const createUserByAdminSchema = z
     departmentId: nullableDepartmentIdSchema.optional(),
   })
   .superRefine((value, context) => {
-    if (value.role === "staff" && !value.departmentId) {
+    if (
+      (value.role === "staff" || value.role === "dept_admin") &&
+      !value.departmentId
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["departmentId"],
-        message: "departmentId is required for staff users",
+        message:
+          "departmentId is required for staff and department admin users",
       });
     }
   });
@@ -53,11 +57,14 @@ export const updateUserRoleSchema = z
     departmentId: nullableDepartmentIdSchema.optional(),
   })
   .superRefine((value, context) => {
-    if (value.role === "staff" && !value.departmentId) {
+    if (
+      (value.role === "staff" || value.role === "dept_admin") &&
+      !value.departmentId
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["departmentId"],
-        message: "departmentId is required when role is staff",
+        message: "departmentId is required when role is staff or dept_admin",
       });
     }
   });
@@ -120,5 +127,8 @@ export const createBudgetSchema = z.object({
 
 export const listBudgetQuerySchema = z.object({
   departmentId: z.coerce.number().int().positive().optional(),
-  periodMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  periodMonth: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/)
+    .optional(),
 });

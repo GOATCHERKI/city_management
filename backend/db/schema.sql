@@ -38,8 +38,19 @@ SET NULL
 (),
   CONSTRAINT valid_user_role CHECK
 (role IN
-('citizen', 'admin', 'staff'))
+('citizen', 'admin', 'staff', 'dept_admin'))
 );
+
+DO $$
+BEGIN
+  ALTER TABLE users DROP CONSTRAINT IF EXISTS valid_user_role;
+  ALTER TABLE users
+  ADD CONSTRAINT valid_user_role CHECK
+  (role IN ('citizen', 'admin', 'staff', 'dept_admin'));
+EXCEPTION
+  WHEN undefined_table THEN
+    NULL;
+END $$;
 
 CREATE TABLE
 IF NOT EXISTS issues

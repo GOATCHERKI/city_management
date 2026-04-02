@@ -122,17 +122,55 @@ const normalizePeriodMonth = (periodMonth) => {
   return `${yearNum.toString().padStart(4, "0")}-${String(monthNum).padStart(2, "0")}-01`;
 };
 
+const getRequesterDepartmentId = async (requesterId) => {
+  if (!Number.isInteger(requesterId) || requesterId <= 0) {
+    return null;
+  }
+
+  const userResult = await pool.query(
+    "SELECT department_id FROM users WHERE id = $1 LIMIT 1",
+    [requesterId],
+  );
+
+  const departmentId = Number(userResult.rows?.[0]?.department_id);
+  return Number.isInteger(departmentId) && departmentId > 0
+    ? departmentId
+    : null;
+};
+
 export const listUsers = async (req, res) => {
+  const requesterRole = String(req.user?.role || "").toLowerCase();
+  const requesterId = Number(req.user?.id);
+
   try {
-    const result = await pool.query(
-      `
+    let query = `
       SELECT u.id, u.cid, u.full_name, u.email, u.role, u.is_email_verified,
              u.department_id, u.created_at, d.name AS department_name
       FROM users u
       LEFT JOIN departments d ON d.id = u.department_id
-      ORDER BY u.created_at DESC;
-      `,
-    );
+    `;
+    const values = [];
+
+    if (requesterRole === "dept_admin") {
+      const requesterDepartmentId = await getRequesterDepartmentId(requesterId);
+      if (!requesterDepartmentId) {
+        return res
+          .status(403)
+          .json({
+            message:
+              "Department admin account is missing a department assignment.",
+          });
+      }
+
+      values.push(requesterDepartmentId);
+      query += `
+      WHERE u.department_id = $1
+      `;
+    }
+
+    query += "ORDER BY u.created_at DESC;";
+
+    const result = await pool.query(query, values);
 
     return res.json({ users: result.rows });
   } catch (error) {
@@ -179,7 +217,9 @@ export const createDepartment = async (req, res) => {
   } catch (error) {
     await client.query("ROLLBACK");
     if (error?.code === "23505") {
-      return res.status(409).json({ message: "Department name already exists." });
+      return res
+        .status(409)
+        .json({ message: "Department name already exists." });
     }
     return handleAdminDbError(res, error);
   } finally {
@@ -244,9 +284,13 @@ export const createUserByAdmin = async (req, res) => {
     });
   }
 
-  if (input.role === "staff" && !Number.isInteger(input.departmentId)) {
+  if (
+    (input.role === "staff" || input.role === "dept_admin") &&
+    !Number.isInteger(input.departmentId)
+  ) {
     return res.status(400).json({
-      message: "departmentId is required when creating a staff user.",
+      message:
+        "departmentId is required when creating a staff or dept_admin user.",
     });
   }
 
@@ -279,7 +323,9 @@ export const createUserByAdmin = async (req, res) => {
         input.email,
         passwordHash,
         input.role,
-        input.role === "staff" ? input.departmentId : null,
+        input.role === "staff" || input.role === "dept_admin"
+          ? input.departmentId
+          : null,
       ],
     );
 
@@ -359,17 +405,18 @@ export const updateUserRole = async (req, res) => {
     }
 
     if (
-      nextRole === "staff" &&
+      (nextRole === "staff" || nextRole === "dept_admin") &&
       !Number.isInteger(departmentId) &&
       !currentUser.department_id
     ) {
       return res.status(400).json({
-        message: "departmentId is required when changing role to staff.",
+        message:
+          "departmentId is required when changing role to staff or dept_admin.",
       });
     }
 
     const resolvedDepartmentId =
-      nextRole === "staff"
+      nextRole === "staff" || nextRole === "dept_admin"
         ? Number.isInteger(departmentId)
           ? departmentId
           : currentUser.department_id
@@ -759,13 +806,39 @@ export const getDashboardStats = async (req, res) => {
 
 export const createBudget = async (req, res) => {
   const actor = getAuditContext(req);
-  const departmentId = Number(req.body?.departmentId);
+  const requesterRole = String(req.user?.role || "").toLowerCase();
+  const requesterId = Number(req.user?.id);
+  const requestedDepartmentId = Number(req.body?.departmentId);
+  const requesterDepartmentId =
+    requesterRole === "dept_admin"
+      ? await getRequesterDepartmentId(requesterId)
+      : null;
+  const departmentId =
+    requesterRole === "dept_admin"
+      ? requesterDepartmentId
+      : requestedDepartmentId;
   const category = req.body?.category ? String(req.body.category).trim() : null;
   const totalAmount = Number(req.body?.totalAmount);
   const periodMonth = normalizePeriodMonth(req.body?.periodMonth);
 
+  if (requesterRole === "dept_admin" && !requesterDepartmentId) {
+    return res
+      .status(403)
+      .json({
+        message: "Department admin account is missing a department assignment.",
+      });
+  }
+
+  if (!Number.isInteger(departmentId) || departmentId <= 0) {
+    return res
+      .status(400)
+      .json({ message: "departmentId must be a positive integer." });
+  }
+
   if (!periodMonth) {
-    return res.status(400).json({ message: "periodMonth must be in YYYY-MM format." });
+    return res
+      .status(400)
+      .json({ message: "periodMonth must be in YYYY-MM format." });
   }
 
   const client = await pool.connect();
@@ -811,14 +884,34 @@ export const createBudget = async (req, res) => {
 
 export const listBudgets = async (req, res) => {
   const query = req.validated?.query || req.query || {};
-  const departmentId =
+  const requesterRole = String(req.user?.role || "").toLowerCase();
+  const requesterId = Number(req.user?.id);
+  const requestedDepartmentId =
     query.departmentId === undefined ? null : Number(query.departmentId);
+  const requesterDepartmentId =
+    requesterRole === "dept_admin"
+      ? await getRequesterDepartmentId(requesterId)
+      : null;
+  const departmentId =
+    requesterRole === "dept_admin"
+      ? requesterDepartmentId
+      : requestedDepartmentId;
   const periodMonth = query.periodMonth
     ? normalizePeriodMonth(query.periodMonth)
     : null;
 
+  if (requesterRole === "dept_admin" && !requesterDepartmentId) {
+    return res
+      .status(403)
+      .json({
+        message: "Department admin account is missing a department assignment.",
+      });
+  }
+
   if (query.periodMonth && !periodMonth) {
-    return res.status(400).json({ message: "periodMonth must be in YYYY-MM format." });
+    return res
+      .status(400)
+      .json({ message: "periodMonth must be in YYYY-MM format." });
   }
 
   const conditions = [];
@@ -834,7 +927,9 @@ export const listBudgets = async (req, res) => {
     conditions.push(`b.period_month = $${values.length}::date`);
   }
 
-  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const whereClause = conditions.length
+    ? `WHERE ${conditions.join(" AND ")}`
+    : "";
 
   try {
     const result = await pool.query(
