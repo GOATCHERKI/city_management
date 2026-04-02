@@ -1226,9 +1226,20 @@ h4 {
 
 .map-search {
     display: grid;
-    grid-template-columns: 1fr auto;
     gap: 8px;
     margin-bottom: 8px;
+}
+
+.map-search__row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+}
+
+.map-search__structured {
+    display: grid;
+    grid-template-columns: 1fr 1.1fr 1.2fr 1.4fr 90px;
+    gap: 8px;
 }
 
 .map-search input {
@@ -1261,6 +1272,26 @@ h4 {
 .map-search__btn:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+}
+
+@media (max-width: 840px) {
+    .map-search__structured {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 520px) {
+    .map-search__row {
+        grid-template-columns: 1fr;
+    }
+
+    .map-search__structured {
+        grid-template-columns: 1fr;
+    }
+
+    .map-search__btn {
+        width: 100%;
+    }
 }
 
 .map-search__feedback {

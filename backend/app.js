@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import authRoutes from "./routes/authRoutes.js";
 import issueRoutes from "./routes/issueRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import geocodeRoutes from "./routes/geocodeRoutes.js";
 
 const parseAllowedOrigins = () =>
   String(process.env.ALLOWED_ORIGINS || "")
@@ -68,6 +69,7 @@ export const createApp = () => {
   app.use("/api/auth", authRoutes);
   app.use("/api/issues", issueRoutes);
   app.use("/api/admin", adminRoutes);
+  app.use("/api/geocode", geocodeRoutes);
 
   app.get("/", (req, res) => {
     res.json({ message: "Smart City backend is running" });

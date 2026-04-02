@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
+import { apiRequest } from "../api.js";
 
 const ISTANBUL_CENTER = [41.0082, 28.9784];
 
@@ -34,6 +35,11 @@ const MapViewport = ({ center, zoom }) => {
 
 export default function MapPicker({ value, onChange }) {
   const [query, setQuery] = useState("");
+  const [city, setCity] = useState("");
+  const [district, setDistrict] = useState("");
+  const [mahalle, setMahalle] = useState("");
+  const [street, setStreet] = useState("");
+  const [streetNumber, setStreetNumber] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
   const [searchMessageType, setSearchMessageType] = useState("info");
@@ -54,10 +60,22 @@ export default function MapPicker({ value, onChange }) {
   const handleSearch = async (event) => {
     event.preventDefault();
     const trimmed = query.trim();
+    const trimmedCity = city.trim();
+    const trimmedDistrict = district.trim();
+    const trimmedMahalle = mahalle.trim();
+    const trimmedStreet = street.trim();
+    const trimmedStreetNumber = streetNumber.trim();
+    const streetLine = `${trimmedStreetNumber} ${trimmedStreet}`.trim();
+    const inferredCity = trimmedCity || "Istanbul";
 
-    if (trimmed.length < 3) {
+    const composedAddress = [streetLine, trimmedMahalle, trimmedDistrict, inferredCity, "Turkey"]
+      .filter(Boolean)
+      .join(", ");
+    const finalQuery = trimmed.length >= 3 ? trimmed : composedAddress;
+
+    if (finalQuery.length < 3) {
       setSearchMessageType("error");
-      setSearchMessage("Type at least 3 characters to search.");
+      setSearchMessage("Type at least 3 characters, or fill city/district/street fields.");
       return;
     }
 
@@ -65,19 +83,23 @@ export default function MapPicker({ value, onChange }) {
     setSearchMessage("");
 
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(trimmed)}`;
-      const response = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-        },
+      const params = new URLSearchParams();
+      if (finalQuery) params.set("q", finalQuery);
+      if (trimmedCity) params.set("city", trimmedCity);
+      if (trimmedDistrict) params.set("district", trimmedDistrict);
+      if (trimmedMahalle) params.set("mahalle", trimmedMahalle);
+      if (trimmedStreet) params.set("street", trimmedStreet);
+      if (trimmedStreetNumber) params.set("number", trimmedStreetNumber);
+
+      const payload = await apiRequest({
+        path: `/geocode/search?${params.toString()}`,
       });
 
-      if (!response.ok) {
-        throw new Error("Address search failed. Please try again.");
-      }
-
-      const results = await response.json();
-      const first = results?.[0];
+      const results = Array.isArray(payload?.results) ? payload.results : [];
+      const firstIstanbulMatch = results.find((item) =>
+        String(item?.displayName || "").toLowerCase().includes("istanbul"),
+      );
+      const first = firstIstanbulMatch || results[0];
 
       if (!first) {
         setSearchMessageType("error");
@@ -86,11 +108,11 @@ export default function MapPicker({ value, onChange }) {
       }
 
       const lat = Number(Number(first.lat).toFixed(6));
-      const lng = Number(Number(first.lon).toFixed(6));
+      const lng = Number(Number(first.lng).toFixed(6));
       onChange({ lat, lng });
       setViewCenter([lat, lng]);
       setSearchMessageType("success");
-      setSearchMessage(first.display_name || "Address found.");
+      setSearchMessage(first.displayName || "Address found.");
     } catch (error) {
       setSearchMessageType("error");
       setSearchMessage(error.message || "Unable to search address right now.");
@@ -101,18 +123,58 @@ export default function MapPicker({ value, onChange }) {
 
   return (
     <div className="map-wrap">
-      <form className="map-search" onSubmit={handleSearch}>
-        <input
-          type="text"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search address (e.g. Kadikoy, Istanbul)"
-          aria-label="Search address"
-        />
-        <button type="submit" className="map-search__btn" disabled={searching}>
-          {searching ? "Searching..." : "Find"}
-        </button>
-      </form>
+      <div className="map-search">
+        <div className="map-search__row">
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Quick search (e.g. Kadikoy, Istanbul)"
+            aria-label="Quick search"
+          />
+          <button type="button" className="map-search__btn" onClick={handleSearch} disabled={searching}>
+            {searching ? "Searching..." : "Find"}
+          </button>
+        </div>
+
+        <div className="map-search__structured">
+          <input
+            type="text"
+            value={city}
+            onChange={(event) => setCity(event.target.value)}
+            placeholder="City (Istanbul)"
+            aria-label="City"
+          />
+          <input
+            type="text"
+            value={district}
+            onChange={(event) => setDistrict(event.target.value)}
+            placeholder="District / Quartier (e.g. Kadikoy)"
+            aria-label="District or quartier"
+          />
+          <input
+            type="text"
+            value={mahalle}
+            onChange={(event) => setMahalle(event.target.value)}
+            placeholder="Mahallesi (e.g. Caferaga Mahallesi)"
+            aria-label="Mahallesi"
+          />
+          <input
+            type="text"
+            value={street}
+            onChange={(event) => setStreet(event.target.value)}
+            placeholder="Street (e.g. Moda Caddesi)"
+            aria-label="Street"
+          />
+          <input
+            type="text"
+            value={streetNumber}
+            onChange={(event) => setStreetNumber(event.target.value)}
+            placeholder="No"
+            aria-label="Street number"
+          />
+        </div>
+      </div>
 
       {searchMessage ? (
         <p className={`map-search__feedback map-search__feedback--${searchMessageType}`}>{searchMessage}</p>
